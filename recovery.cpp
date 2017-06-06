@@ -209,6 +209,14 @@ bool is_ro_debuggable() {
     return android::base::GetBoolProperty("ro.debuggable", false);
 }
 
+bool reboot(const std::string& command) {
+    std::string cmd = command;
+    if (android::base::GetBoolProperty("ro.boot.quiescent", false)) {
+        cmd += ",quiescent";
+    }
+    return android::base::SetProperty(ANDROID_RB_PROPERTY, cmd);
+}
+
 static void redirect_stdio(const char* filename) {
     int pipefd[2];
     if (pipe(pipefd) == -1) {
@@ -1297,20 +1305,20 @@ static bool is_battery_ok() {
     }
 }
 
-static void set_retry_bootloader_message(int retry_count, int argc, char** argv) {
-    std::vector<std::string> options;
-    for (int i = 1; i < argc; ++i) {
-        if (strstr(argv[i], "retry_count") == nullptr) {
-            options.push_back(argv[i]);
-        }
+static void set_retry_bootloader_message(int retry_count, const std::vector<std::string>& args) {
+  std::vector<std::string> options;
+  for (const auto& arg : args) {
+    if (!android::base::StartsWith(arg, "--retry_count")) {
+      options.push_back(arg);
     }
+  }
 
-    // Increment the retry counter by 1.
-    options.push_back(android::base::StringPrintf("--retry_count=%d", retry_count+1));
-    std::string err;
-    if (!update_bootloader_message(options, &err)) {
-        LOG(ERROR) << err;
-    }
+  // Increment the retry counter by 1.
+  options.push_back(android::base::StringPrintf("--retry_count=%d", retry_count + 1));
+  std::string err;
+  if (!update_bootloader_message(options, &err)) {
+    LOG(ERROR) << err;
+  }
 }
 
 static bool bootreason_in_blacklist() {
@@ -1449,12 +1457,18 @@ int main(int argc, char **argv) {
     printf("reason is [%s]\n", reason);
 
     Device* device = make_device();
-    ui = device->GetUI();
+    if (android::base::GetBoolProperty("ro.boot.quiescent", false)) {
+        printf("Quiescent recovery mode.\n");
+        ui = new StubRecoveryUI();
+    } else {
+        ui = device->GetUI();
 
-    if (!ui->Init(locale)) {
-      printf("Failed to initialize UI, use stub UI instead.");
-      ui = new StubRecoveryUI();
+        if (!ui->Init(locale)) {
+            printf("Failed to initialize UI, use stub UI instead.\n");
+            ui = new StubRecoveryUI();
+        }
     }
+
     // Set background string to "installing security update" for security update,
     // otherwise set it to "installing system update".
     ui->SetSystemUpdateText(security_update);
@@ -1521,12 +1535,12 @@ int main(int argc, char **argv) {
                 // times before we abandon this OTA update.
                 if (status == INSTALL_RETRY && retry_count < EIO_RETRY_COUNT) {
                     copy_logs();
-                    set_retry_bootloader_message(retry_count, argc, argv);
+                    set_retry_bootloader_message(retry_count, args);
                     // Print retry count on screen.
                     ui->Print("Retry attempt %d\n", retry_count);
 
                     // Reboot and retry the update
-                    if (!android::base::SetProperty(ANDROID_RB_PROPERTY, "reboot,recovery")) {
+                    if (!reboot("reboot,recovery")) {
                         ui->Print("Reboot failed\n");
                     } else {
                         while (true) {
@@ -1623,7 +1637,7 @@ int main(int argc, char **argv) {
 
         default:
             ui->Print("Rebooting...\n");
-            android::base::SetProperty(ANDROID_RB_PROPERTY, "reboot,");
+            reboot("reboot,");
             break;
     }
     while (true) {
