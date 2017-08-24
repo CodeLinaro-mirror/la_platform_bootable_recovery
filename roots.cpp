@@ -174,12 +174,12 @@ static int exec_cmd(const char* path, char* const argv[]) {
     return WEXITSTATUS(status);
 }
 
-static ssize_t get_file_size(int fd, uint64_t reserve_len) {
+static s64 get_file_size(int fd, uint64_t reserve_len) {
   struct stat buf;
   int ret = fstat(fd, &buf);
   if (ret) return 0;
 
-  ssize_t computed_size;
+  s64 computed_size;
   if (S_ISREG(buf.st_mode)) {
     computed_size = buf.st_size - reserve_len;
   } else if (S_ISBLK(buf.st_mode)) {
@@ -226,7 +226,7 @@ int format_volume(const char* volume, const char* directory) {
             close(fd);
         }
 
-        ssize_t length = 0;
+        s64 length = 0;
         if (v->length != 0) {
             length = v->length;
         } else if (v->key_loc != NULL && strcmp(v->key_loc, "footer") == 0) {
