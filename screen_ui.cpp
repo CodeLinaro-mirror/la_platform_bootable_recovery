@@ -53,6 +53,7 @@ static double now() {
 ScreenRecoveryUI::ScreenRecoveryUI()
     : kMarginWidth(RECOVERY_UI_MARGIN_WIDTH),
       kMarginHeight(RECOVERY_UI_MARGIN_HEIGHT),
+      kAnimationFps(RECOVERY_UI_ANIMATION_FPS),
       density_(static_cast<float>(android::base::GetIntProperty("ro.sf.lcd_density", 160)) / 160.f),
       currentIcon(NONE),
       progressBarType(EMPTY),
@@ -77,7 +78,6 @@ ScreenRecoveryUI::ScreenRecoveryUI()
       loop_frames(0),
       current_frame(0),
       intro_done(false),
-      animation_fps(30),  // TODO: there's currently no way to infer this.
       stage(-1),
       max_stage(-1),
       updateMutex(PTHREAD_MUTEX_INITIALIZER) {}
@@ -278,6 +278,34 @@ int ScreenRecoveryUI::DrawTextLines(int x, int y, const char* const* lines) cons
   return offset;
 }
 
+int ScreenRecoveryUI::DrawWrappedTextLines(int x, int y, const char* const* lines) const {
+  int offset = 0;
+  for (size_t i = 0; lines != nullptr && lines[i] != nullptr; ++i) {
+    // The line will be wrapped if it exceeds text_cols_.
+    std::string line(lines[i]);
+    size_t next_start = 0;
+    while (next_start < line.size()) {
+      std::string sub = line.substr(next_start, text_cols_ + 1);
+      if (sub.size() <= text_cols_) {
+        next_start += sub.size();
+      } else {
+        // Line too long and must be wrapped to text_cols_ columns.
+        size_t last_space = sub.find_last_of(" \t\n");
+        if (last_space == std::string::npos) {
+          // No space found, just draw as much as we can
+          sub.resize(text_cols_);
+          next_start += text_cols_;
+        } else {
+          sub.resize(last_space);
+          next_start += last_space + 1;
+        }
+      }
+      offset += DrawTextLine(x, y + offset, sub.c_str(), false);
+    }
+  }
+  return offset;
+}
+
 static const char* REGULAR_HELP[] = {
   "Use volume up/down and power.",
   NULL
@@ -316,7 +344,8 @@ void ScreenRecoveryUI::draw_screen_locked() {
     y += DrawTextLines(x, y, HasThreeButtons() ? REGULAR_HELP : LONG_PRESS_HELP);
 
     SetColor(HEADER);
-    y += DrawTextLines(x, y, menu_headers_);
+    // Ignore kMenuIndent, which is not taken into account by text_cols_.
+    y += DrawWrappedTextLines(kMarginWidth, y, menu_headers_);
 
     SetColor(MENU);
     y += DrawHorizontalRule(y) + 4;
@@ -375,7 +404,7 @@ void* ScreenRecoveryUI::ProgressThreadStartRoutine(void* data) {
 }
 
 void ScreenRecoveryUI::ProgressThreadLoop() {
-  double interval = 1.0 / animation_fps;
+  double interval = 1.0 / kAnimationFps;
   while (true) {
     double start = now();
     pthread_mutex_lock(&updateMutex);

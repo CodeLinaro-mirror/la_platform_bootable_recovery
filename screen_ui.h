@@ -84,6 +84,9 @@ class ScreenRecoveryUI : public RecoveryUI {
   const int kMarginWidth;
   const int kMarginHeight;
 
+  // Number of frames per sec (default: 30) for both parts of the animation.
+  const int kAnimationFps;
+
   // The scale factor from dp to pixels. 1.0 for mdpi, 4.0 for xxxhdpi.
   const float density_;
 
@@ -141,9 +144,6 @@ class ScreenRecoveryUI : public RecoveryUI {
   size_t current_frame;
   bool intro_done;
 
-  // Number of frames per sec (default: 30) for both parts of the animation.
-  int animation_fps;
-
   int stage, max_stage;
 
   int char_width_;
@@ -187,6 +187,9 @@ class ScreenRecoveryUI : public RecoveryUI {
   virtual int DrawTextLine(int x, int y, const char* line, bool bold) const;
   // Draws multiple text lines. Returns the offset it should be moving along Y-axis.
   int DrawTextLines(int x, int y, const char* const* lines) const;
+  // Similar to DrawTextLines() to draw multiple text lines, but additionally wraps long lines.
+  // Returns the offset it should be moving along Y-axis.
+  int DrawWrappedTextLines(int x, int y, const char* const* lines) const;
 };
 
 #endif  // RECOVERY_UI_H
