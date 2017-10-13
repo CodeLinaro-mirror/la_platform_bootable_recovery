@@ -17,6 +17,7 @@ AM_LDFLAGS := -shared -version-info 1:0:0
 c_sources := parser.y \
             lexer.l \
             expr.c
+h_sources := expr.h
 
 library_includedir := $(pkgincludedir)
 
