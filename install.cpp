@@ -636,9 +636,12 @@ install_package(const char* path, bool* wipe_cache, const char* install_file,
     int start_temperature = GetMaxValueFromThermalZone();
     int max_temperature = start_temperature;
 
-    int result;
+    int result = 0;
     std::vector<std::string> log_buffer;
-    if (setup_install_mounts() != 0) {
+    if (needs_mount == true) {
+        result = setup_install_mounts();
+    }
+    if (result != 0) {
         LOG(ERROR) << "failed to set up expected mounts for install; aborting";
         result = INSTALL_ERROR;
     } else {
