@@ -37,6 +37,7 @@
 #include "mincrypt/sha.h"
 #include "minzip/Hash.h"
 #include "updater.h"
+#include "error_code.h"
 
 #define BLOCKSIZE 4096
 
@@ -766,19 +767,19 @@ static int CreateStash(State* state, int maxblocks, const char* blockdev, char**
     res = stat(dirname, &st);
 
     if (res == -1 && errno != ENOENT) {
-        ErrorAbort(state, "stat \"%s\" failed: %s\n", dirname, strerror(errno));
+        ErrorAbort(state, "E%d: stat \"%s\" failed: %s\n", UPDATER_STAT_FAILURE, dirname, strerror(errno));
         goto csout;
     } else if (res != 0) {
         fprintf(stderr, "creating stash %s\n", dirname);
         res = mkdir(dirname, STASH_DIRECTORY_MODE);
 
         if (res != 0) {
-            ErrorAbort(state, "mkdir \"%s\" failed: %s\n", dirname, strerror(errno));
+            ErrorAbort(state, "E%d: mkdir \"%s\" failed: %s\n", UPDATER_MKDIR_FAILURE, dirname, strerror(errno));
             goto csout;
         }
 
         if (CacheSizeCheck(maxblocks * BLOCKSIZE) != 0) {
-            ErrorAbort(state, "not enough space for stash\n");
+            ErrorAbort(state, "E%d: not enough space for stash\n", UPDATER_CACHE_NOT_ENOUGH);
             goto csout;
         }
 
@@ -798,7 +799,7 @@ static int CreateStash(State* state, int maxblocks, const char* blockdev, char**
     size = (maxblocks * BLOCKSIZE) - size;
 
     if (size > 0 && CacheSizeCheck(size) != 0) {
-        ErrorAbort(state, "not enough space for stash (%d more needed)\n", size);
+        ErrorAbort(state, "E%d: not enough space for stash (%d more needed)\n", UPDATER_CACHE_NOT_ENOUGH, size);
         goto csout;
     }
 
@@ -1556,19 +1557,19 @@ static Value* PerformBlockImageUpdate(const char* name, State* state, int argc, 
     }
 
     if (blockdev_filename->type != VAL_STRING) {
-        ErrorAbort(state, "blockdev_filename argument to %s must be string", name);
+        ErrorAbort(state, "E%d: blockdev_filename argument to %s must be string", UPDATER_BLOC_FILENAME_TYPE_NOT_STR, name);
         goto pbiudone;
     }
     if (transfer_list_value->type != VAL_BLOB) {
-        ErrorAbort(state, "transfer_list argument to %s must be blob", name);
+        ErrorAbort(state, "E%d: transfer_list argument to %s must be blob", UPDATER_BLOC_FILENAME_TYPE_NOT_STR, name);
         goto pbiudone;
     }
     if (new_data_fn->type != VAL_STRING) {
-        ErrorAbort(state, "new_data_fn argument to %s must be string", name);
+        ErrorAbort(state, "E%d: new_data_fn argument to %s must be string", UPDATER_BLOC_TRANSFER_LIST_TYPE_NOT_BLOB, name);
         goto pbiudone;
     }
     if (patch_data_fn->type != VAL_STRING) {
-        ErrorAbort(state, "patch_data_fn argument to %s must be string", name);
+        ErrorAbort(state, "E%d: patch_data_fn argument to %s must be string", UPDATER_BLOC_FILENAME_TYPE_NOT_STR, name);
         goto pbiudone;
     }
 
@@ -1603,6 +1604,7 @@ static Value* PerformBlockImageUpdate(const char* name, State* state, int argc, 
     params.fd = TEMP_FAILURE_RETRY(open(blockdev_filename->data, O_RDWR));
 
     if (params.fd == -1) {
+        ErrorAbort(state, "E%d: open \"%s\" failed: %s\n", UPDATER_FILE_OPEN_FAILURE, blockdev_filename->data, strerror(errno));
         fprintf(stderr, "open \"%s\" failed: %s\n", blockdev_filename->data, strerror(errno));
         goto pbiudone;
     }
@@ -1618,6 +1620,7 @@ static Value* PerformBlockImageUpdate(const char* name, State* state, int argc, 
 
         int error = pthread_create(&params.thread, &attr, unzip_new_data, &params.nti);
         if (error != 0) {
+            ErrorAbort(state, "E%d: pthread_create failed: %s\n", UPDATER_BLOC_THREAD_CREATE_FAILURE, strerror(error));
             fprintf(stderr, "pthread_create failed: %s\n", strerror(error));
             goto pbiudone;
         }
@@ -1628,6 +1631,7 @@ static Value* PerformBlockImageUpdate(const char* name, State* state, int argc, 
     transfer_list = malloc(transfer_list_value->size + 1);
 
     if (transfer_list == NULL) {
+        ErrorAbort(state, "E%d: failed to allocate", UPDATER_MEMORY_ALLOC_FAILURE);
         fprintf(stderr, "failed to allocate %zd bytes for transfer list\n",
             transfer_list_value->size + 1);
         goto pbiudone;
@@ -1652,7 +1656,7 @@ static Value* PerformBlockImageUpdate(const char* name, State* state, int argc, 
     total_blocks = strtol(line, NULL, 0);
 
     if (total_blocks < 0) {
-        ErrorAbort(state, "unexpected block count [%s]\n", line);
+        ErrorAbort(state, "E%d: unexpected block count [%s]\n", UPDATER_BLOC_COUNT_UNEXPECTED, line);
         goto pbiudone;
     } else if (total_blocks == 0) {
         rc = 0;
@@ -1669,7 +1673,7 @@ static Value* PerformBlockImageUpdate(const char* name, State* state, int argc, 
         stash_max_blocks = strtol(line, NULL, 0);
 
         if (stash_max_blocks < 0) {
-            ErrorAbort(state, "unexpected maximum stash blocks [%s]\n", line);
+            ErrorAbort(state, "E%d: unexpected maximum stash blocks [%s]\n", UPDATER_BLOC_MAX_STASH_UNEXPECTED, line);
             goto pbiudone;
         }
 
@@ -1715,6 +1719,8 @@ static Value* PerformBlockImageUpdate(const char* name, State* state, int argc, 
         }
 
         if (cmd->f != NULL && cmd->f(&params) == -1) {
+            ErrorAbort(state, "E%d: failed to execute command [%s]\n",
+                UPDATER_BLOC_COMMAND_EXECUTE_FAILURE, logcmd ? logcmd : params.cmdname);
             fprintf(stderr, "failed to execute command [%s]\n",
                 logcmd ? logcmd : params.cmdname);
             goto pbiudone;
@@ -1891,22 +1897,23 @@ Value* RangeSha1Fn(const char* name, State* state, int argc, Expr* argv[]) {
     Value* ranges;
     const uint8_t* digest = NULL;
     RangeSet* rs = NULL;
+    int fd = -1;
     if (ReadValueArgs(state, argv, 2, &blockdev_filename, &ranges) < 0) {
         return NULL;
     }
 
     if (blockdev_filename->type != VAL_STRING) {
-        ErrorAbort(state, "blockdev_filename argument to %s must be string", name);
+        ErrorAbort(state, "E%d: blockdev_filename argument to %s must be string", UPDATER_BLOC_FILENAME_TYPE_NOT_STR, name);
         goto done;
     }
     if (ranges->type != VAL_STRING) {
-        ErrorAbort(state, "ranges argument to %s must be string", name);
+        ErrorAbort(state, "E%d: ranges argument to %s must be string", UPDATER_BLOC_FILENAME_TYPE_NOT_STR, name);
         goto done;
     }
 
-    int fd = open(blockdev_filename->data, O_RDWR);
+    fd = open(blockdev_filename->data, O_RDWR);
     if (fd < 0) {
-        ErrorAbort(state, "open \"%s\" failed: %s", blockdev_filename->data, strerror(errno));
+        ErrorAbort(state, "E%d: open \"%s\" failed: %s", UPDATER_FILE_OPEN_FAILURE, blockdev_filename->data, strerror(errno));
         goto done;
     }
 
@@ -1919,14 +1926,14 @@ Value* RangeSha1Fn(const char* name, State* state, int argc, Expr* argv[]) {
     int i, j;
     for (i = 0; i < rs->count; ++i) {
         if (!check_lseek(fd, (off64_t)rs->pos[i*2] * BLOCKSIZE, SEEK_SET)) {
-            ErrorAbort(state, "failed to seek %s: %s", blockdev_filename->data,
+            ErrorAbort(state, "E%d: failed to seek %s: %s", UPDATER_FILE_SEEK_FAILURE, blockdev_filename->data,
                 strerror(errno));
             goto done;
         }
 
         for (j = rs->pos[i*2]; j < rs->pos[i*2+1]; ++j) {
             if (read_all(fd, buffer, BLOCKSIZE) == -1) {
-                ErrorAbort(state, "failed to read %s: %s", blockdev_filename->data,
+                ErrorAbort(state, "E%d: failed to read %s: %s", UPDATER_FILE_SEEK_FAILURE, blockdev_filename->data,
                     strerror(errno));
                 goto done;
             }

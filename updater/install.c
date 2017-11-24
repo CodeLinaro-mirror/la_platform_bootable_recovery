@@ -52,6 +52,7 @@
 #include "make_ext4fs.h"
 #include "wipe.h"
 #endif
+#include "error_code.h"
 
 void uiPrint(State* state, char* buffer) {
     char* line = strtok(buffer, "\n");
@@ -93,7 +94,7 @@ char* PrintSha1(const uint8_t* digest) {
 Value* MountFn(const char* name, State* state, int argc, Expr* argv[]) {
     char* result = NULL;
     if (argc != 4 && argc != 5) {
-        return ErrorAbort(state, "%s() expects 4-5 args, got %d", name, argc);
+        return ErrorAbort(state, "E%d: %s() expects 4-5 args, got %d", UPDATER_ARGS_COUNT_UNEXPECTED, name, argc);
     }
     char* fs_type;
     char* partition_type;
@@ -116,20 +117,20 @@ Value* MountFn(const char* name, State* state, int argc, Expr* argv[]) {
     }
 
     if (strlen(fs_type) == 0) {
-        ErrorAbort(state, "fs_type argument to %s() can't be empty", name);
+        ErrorAbort(state, "E%d: fs_type argument to %s() can't be empty", UPDATER_MOUNT_POINT_ARGS_EMPTY, name);
         goto done;
     }
     if (strlen(partition_type) == 0) {
-        ErrorAbort(state, "partition_type argument to %s() can't be empty",
-                   name);
+        ErrorAbort(state, "E%d: partition_type argument to %s() can't be empty",
+                   UPDATER_MOUNT_POINT_ARGS_EMPTY,name);
         goto done;
     }
     if (strlen(location) == 0) {
-        ErrorAbort(state, "location argument to %s() can't be empty", name);
+        ErrorAbort(state, "E%d: location argument to %s() can't be empty", UPDATER_MOUNT_POINT_ARGS_EMPTY, name);
         goto done;
     }
     if (strlen(mount_point) == 0) {
-        ErrorAbort(state, "mount_point argument to %s() can't be empty", name);
+        ErrorAbort(state, "E%d: mount_point argument to %s() can't be empty", UPDATER_MOUNT_POINT_ARGS_EMPTY, name);
         goto done;
     }
 
@@ -190,14 +191,14 @@ done:
 Value* IsMountedFn(const char* name, State* state, int argc, Expr* argv[]) {
     char* result = NULL;
     if (argc != 1) {
-        return ErrorAbort(state, "%s() expects 1 arg, got %d", name, argc);
+        return ErrorAbort(state, "E%d: %s() expects 1 arg, got %d", UPDATER_ARGS_COUNT_UNEXPECTED, name, argc);
     }
     char* mount_point;
     if (ReadArgs(state, argv, 1, &mount_point) < 0) {
         return NULL;
     }
     if (strlen(mount_point) == 0) {
-        ErrorAbort(state, "mount_point argument to unmount() can't be empty");
+        ErrorAbort(state, "E%d: mount_point argument to unmount() can't be empty", UPDATER_MOUNT_POINT_ARGS_EMPTY);
         goto done;
     }
 
@@ -218,14 +219,14 @@ done:
 Value* UnmountFn(const char* name, State* state, int argc, Expr* argv[]) {
     char* result = NULL;
     if (argc != 1) {
-        return ErrorAbort(state, "%s() expects 1 arg, got %d", name, argc);
+        return ErrorAbort(state, "E%d: %s() expects 1 arg, got %d", UPDATER_ARGS_COUNT_UNEXPECTED, name, argc);
     }
     char* mount_point;
     if (ReadArgs(state, argv, 1, &mount_point) < 0) {
         return NULL;
     }
     if (strlen(mount_point) == 0) {
-        ErrorAbort(state, "mount_point argument to unmount() can't be empty");
+        ErrorAbort(state, "E%d: mount_point argument to unmount() can't be empty", UPDATER_MOUNT_POINT_ARGS_EMPTY);
         goto done;
     }
 
@@ -373,7 +374,7 @@ ERROR:
 Value* FormatFn(const char* name, State* state, int argc, Expr* argv[]) {
     char* result = NULL;
     if (argc != 5) {
-        return ErrorAbort(state, "%s() expects 5 args, got %d", name, argc);
+        return ErrorAbort(state, "E%d: %s() expects 5 args, got %d", UPDATER_ARGS_COUNT_UNEXPECTED, name, argc);
     }
     char* fs_type;
     char* partition_type;
@@ -386,21 +387,21 @@ Value* FormatFn(const char* name, State* state, int argc, Expr* argv[]) {
     }
 
     if (strlen(fs_type) == 0) {
-        ErrorAbort(state, "fs_type argument to %s() can't be empty", name);
+        ErrorAbort(state, "E%d: fs_type argument to %s() can't be empty", UPDATER_FORMAT_ARGS_EMPTY, name);
         goto done;
     }
     if (strlen(partition_type) == 0) {
-        ErrorAbort(state, "partition_type argument to %s() can't be empty",
+        ErrorAbort(state, "E%d: partition_type argument to %s() can't be empty", UPDATER_FORMAT_ARGS_EMPTY,
                    name);
         goto done;
     }
     if (strlen(location) == 0) {
-        ErrorAbort(state, "location argument to %s() can't be empty", name);
+        ErrorAbort(state, "E%d: location argument to %s() can't be empty", UPDATER_FORMAT_ARGS_EMPTY, name);
         goto done;
     }
 
     if (strlen(mount_point) == 0) {
-        ErrorAbort(state, "mount_point argument to %s() can't be empty", name);
+        ErrorAbort(state, "E%d: mount_point argument to %s() can't be empty", UPDATER_FORMAT_ARGS_EMPTY, name);
         goto done;
     }
 
@@ -494,7 +495,7 @@ done:
 Value* RenameFn(const char* name, State* state, int argc, Expr* argv[]) {
     char* result = NULL;
     if (argc != 2) {
-        return ErrorAbort(state, "%s() expects 2 args, got %d", name, argc);
+        return ErrorAbort(state, "E%d: %s() expects 2 args, got %d", UPDATER_ARGS_COUNT_UNEXPECTED, name, argc);
     }
 
     char* src_name;
@@ -504,21 +505,21 @@ Value* RenameFn(const char* name, State* state, int argc, Expr* argv[]) {
         return NULL;
     }
     if (strlen(src_name) == 0) {
-        ErrorAbort(state, "src_name argument to %s() can't be empty", name);
+        ErrorAbort(state, "E%d: src_name argument to %s() can't be empty", UPDATER_RENAME_ARGS_EMPTY, name);
         goto done;
     }
     if (strlen(dst_name) == 0) {
-        ErrorAbort(state, "dst_name argument to %s() can't be empty", name);
+        ErrorAbort(state, "E%d: dst_name argument to %s() can't be empty", UPDATER_RENAME_ARGS_EMPTY, name);
         goto done;
     }
     if (make_parents(dst_name) != 0) {
-        ErrorAbort(state, "Creating parent of %s failed, error %s",
+        ErrorAbort(state, "E%d: Creating parent of %s failed, error %s", UPDATER_RENAME_CREATE_PARENTS_FAILURE,
           dst_name, strerror(errno));
     } else if (access(dst_name, F_OK) == 0 && access(src_name, F_OK) != 0) {
         // File was already moved
         result = dst_name;
     } else if (rename(src_name, dst_name) != 0) {
-        ErrorAbort(state, "Rename of %s to %s failed, error %s",
+        ErrorAbort(state, "E%d: Rename of %s to %s failed, error %s", UPDATER_RENAME_FAILURE,
           src_name, dst_name, strerror(errno));
     } else {
         result = dst_name;
@@ -563,7 +564,7 @@ Value* DeleteFn(const char* name, State* state, int argc, Expr* argv[]) {
 
 Value* ShowProgressFn(const char* name, State* state, int argc, Expr* argv[]) {
     if (argc != 2) {
-        return ErrorAbort(state, "%s() expects 2 args, got %d", name, argc);
+        return ErrorAbort(state, "E%d: %s() expects 2 args, got %d", UPDATER_ARGS_COUNT_UNEXPECTED, name, argc);
     }
     char* frac_str;
     char* sec_str;
@@ -583,7 +584,7 @@ Value* ShowProgressFn(const char* name, State* state, int argc, Expr* argv[]) {
 
 Value* SetProgressFn(const char* name, State* state, int argc, Expr* argv[]) {
     if (argc != 1) {
-        return ErrorAbort(state, "%s() expects 1 arg, got %d", name, argc);
+        return ErrorAbort(state, "E%d: %s() expects 1 arg, got %d", UPDATER_ARGS_COUNT_UNEXPECTED, name, argc);
     }
     char* frac_str;
     if (ReadArgs(state, argv, 1, &frac_str) < 0) {
@@ -602,7 +603,7 @@ Value* SetProgressFn(const char* name, State* state, int argc, Expr* argv[]) {
 Value* PackageExtractDirFn(const char* name, State* state,
                           int argc, Expr* argv[]) {
     if (argc != 2) {
-        return ErrorAbort(state, "%s() expects 2 args, got %d", name, argc);
+        return ErrorAbort(state, "E%d: %s() expects 2 args, got %d", UPDATER_ARGS_COUNT_UNEXPECTED, name, argc);
     }
     char* zip_path;
     char* dest_path;
@@ -630,8 +631,8 @@ Value* PackageExtractDirFn(const char* name, State* state,
 Value* PackageExtractFileFn(const char* name, State* state,
                            int argc, Expr* argv[]) {
     if (argc < 1 || argc > 2) {
-        return ErrorAbort(state, "%s() expects 1 or 2 args, got %d",
-                          name, argc);
+        return ErrorAbort(state, "E%d: %s() expects 1 or 2 args, got %d",
+                          UPDATER_ARGS_COUNT_UNEXPECTED, name, argc);
     }
     bool success = false;
 
@@ -731,7 +732,7 @@ static int make_parents(char* name) {
 //    unlinks any previously existing src1, src2, etc before creating symlinks.
 Value* SymlinkFn(const char* name, State* state, int argc, Expr* argv[]) {
     if (argc == 0) {
-        return ErrorAbort(state, "%s() expects 1+ args, got %d", name, argc);
+        return ErrorAbort(state, "E%d: %s() expects 1+ args, got %d", UPDATER_ARGS_COUNT_UNEXPECTED, name, argc);
     }
     char* target;
     target = Evaluate(state, argv[0]);
@@ -768,7 +769,7 @@ Value* SymlinkFn(const char* name, State* state, int argc, Expr* argv[]) {
     free(srcs);
     free(target);
     if (bad) {
-        return ErrorAbort(state, "%s: some symlinks failed", name);
+        return ErrorAbort(state, "E%d: %s: some symlinks failed", UPDATER_SYS_LINK_FAILURE, name);
     }
     return StringValue(strdup(""));
 }
@@ -994,15 +995,15 @@ static Value* SetMetadataFn(const char* name, State* state, int argc, Expr* argv
     bool recursive = (strcmp(name, "set_metadata_recursive") == 0);
 
     if ((argc % 2) != 1) {
-        return ErrorAbort(state, "%s() expects an odd number of arguments, got %d",
-                          name, argc);
+        return ErrorAbort(state, "E%d: %s() expects an odd number of arguments, got %d",
+                          UPDATER_ARGS_COUNT_UNEXPECTED, name, argc);
     }
 
     char** args = ReadVarArgs(state, argc, argv);
     if (args == NULL) return NULL;
 
     if (lstat(args[0], &sb) == -1) {
-        result = ErrorAbort(state, "%s: Error on lstat of \"%s\": %s", name, args[0], strerror(errno));
+        result = ErrorAbort(state, "E%d: %s: Error on lstat of \"%s\": %s", UPDATER_LSTAT_FAILURE, name, args[0], strerror(errno));
         goto done;
     }
 
@@ -1029,7 +1030,7 @@ done:
     }
 
     if (bad > 0) {
-        return ErrorAbort(state, "%s: some changes failed", name);
+        return ErrorAbort(state, "E%d: %s: some changes failed", UPDATER_SET_META_FAILURE, name);
     }
 
     return StringValue(strdup(""));
@@ -1037,7 +1038,7 @@ done:
 
 Value* GetPropFn(const char* name, State* state, int argc, Expr* argv[]) {
     if (argc != 1) {
-        return ErrorAbort(state, "%s() expects 1 arg, got %d", name, argc);
+        return ErrorAbort(state, "E%d: %s() expects 1 arg, got %d", UPDATER_ARGS_COUNT_UNEXPECTED, name, argc);
     }
     char* key;
     key = Evaluate(state, argv[0]);
@@ -1066,20 +1067,20 @@ Value* ConfirmDevVariant(const char* name, State* state, int argc, Expr* argv[])
     int package_dev_variant_len;
     int current_dev_variant_len;
     if (argc != 1) {
-        return ErrorAbort(state, "%s() expects 1 arg, got %d", name, argc);
+        return ErrorAbort(state, "E%d: %s() expects 1 arg, got %d", UPDATER_ARGS_COUNT_UNEXPECTED, name, argc);
     }
     package_dev_variant = Evaluate(state, argv[0]);
     if (!package_dev_variant) goto error;
     property_get("ro.product.device", current_dev_variant, "n/a");
     if (!strncmp(current_dev_variant,"n/a",3)) {
-        ErrorAbort(state, "Failed to get valid ro.product.device");
+        ErrorAbort(state, "E%d: Failed to get valid ro.product.device", UPDATER_DEVICE_UNCOMPATIBLE);
         goto error;
     }
     package_dev_variant_len = strlen(package_dev_variant);
     current_dev_variant_len = strlen(current_dev_variant);
     //Ensure device variant lengths are atleast 3 characters long
     if ((package_dev_variant_len < 3) || (current_dev_variant_len < 3)) {
-        ErrorAbort(state, "Device Variant length is less than 3 characters");
+        ErrorAbort(state, "E%d: Device Variant length is less than 3 characters", UPDATER_DEVICE_UNCOMPATIBLE);
         goto error;
     }
     //Length of the largest string - 3(for _32/64)
@@ -1106,7 +1107,7 @@ Value* ConfirmDevVariant(const char* name, State* state, int argc, Expr* argv[])
                          "_64", 3))
                 goto success;
         }
-        ErrorAbort(state, "Invalid target for update package");
+        ErrorAbort(state, "E%d: Invalid target for update package", UPDATER_DEVICE_UNCOMPATIBLE);
         goto error;
     }
 success:
@@ -1135,35 +1136,35 @@ Value* FileGetPropFn(const char* name, State* state, int argc, Expr* argv[]) {
 
     struct stat st;
     if (stat(filename, &st) < 0) {
-        ErrorAbort(state, "%s: failed to stat \"%s\": %s",
-                   name, filename, strerror(errno));
+        ErrorAbort(state, "E%d: %s: failed to stat \"%s\": %s",
+                   UPDATER_STAT_FAILURE, name, filename, strerror(errno));
         goto done;
     }
 
 #define MAX_FILE_GETPROP_SIZE    65536
 
     if (st.st_size > MAX_FILE_GETPROP_SIZE) {
-        ErrorAbort(state, "%s too large for %s (max %d)",
-                   filename, name, MAX_FILE_GETPROP_SIZE);
+        ErrorAbort(state, "E%d: %s too large for %s (max %d)",
+                   UPDATER_EXCEED_FILE_GETPROP_SIZE, filename, name, MAX_FILE_GETPROP_SIZE);
         goto done;
     }
 
     buffer = malloc(st.st_size+1);
     if (buffer == NULL) {
-        ErrorAbort(state, "%s: failed to alloc %lld bytes", name, (long long)st.st_size+1);
+        ErrorAbort(state, "E%d: %s: failed to alloc %lld bytes", UPDATER_MEMORY_ALLOC_FAILURE, name, (long long)st.st_size+1);
         goto done;
     }
 
     FILE* f = fopen(filename, "rb");
     if (f == NULL) {
-        ErrorAbort(state, "%s: failed to open %s: %s",
-                   name, filename, strerror(errno));
+        ErrorAbort(state, "E%d: %s: failed to open %s: %s",
+                   UPDATER_FILE_OPEN_FAILURE, name, filename, strerror(errno));
         goto done;
     }
 
     if (fread(buffer, 1, st.st_size, f) != st.st_size) {
-        ErrorAbort(state, "%s: failed to read %lld bytes from %s",
-                   name, (long long)st.st_size+1, filename);
+        ErrorAbort(state, "E%d: %s: failed to read %lld bytes from %s",
+                   UPDATER_FILE_READ_FAILURE, name, (long long)st.st_size+1, filename);
         fclose(f);
         goto done;
     }
@@ -1236,16 +1237,16 @@ Value* WriteRawImageFn(const char* name, State* state, int argc, Expr* argv[]) {
 
     char* partition = NULL;
     if (partition_value->type != VAL_STRING) {
-        ErrorAbort(state, "partition argument to %s must be string", name);
+        ErrorAbort(state, "E%d: partition argument to %s must be string", UPDATER_WRITE_RAW_IMAGE_ARGS_ERROR, name);
         goto done;
     }
     partition = partition_value->data;
     if (strlen(partition) == 0) {
-        ErrorAbort(state, "partition argument to %s can't be empty", name);
+        ErrorAbort(state, "E%d: partition argument to %s can't be empty", UPDATER_WRITE_RAW_IMAGE_ARGS_ERROR, name);
         goto done;
     }
     if (contents->type == VAL_STRING && strlen((char*) contents->data) == 0) {
-        ErrorAbort(state, "file argument to %s can't be empty", name);
+        ErrorAbort(state, "E%d: file argument to %s can't be empty", UPDATER_WRITE_RAW_IMAGE_ARGS_ERROR, name);
         goto done;
     }
 
@@ -1326,8 +1327,8 @@ Value* ApplyPatchSpaceFn(const char* name, State* state,
     char* endptr;
     size_t bytes = strtol(bytes_str, &endptr, 10);
     if (bytes == 0 && endptr == bytes_str) {
-        ErrorAbort(state, "%s(): can't parse \"%s\" as byte count\n\n",
-                   name, bytes_str);
+        ErrorAbort(state, "E%d: %s(): can't parse \"%s\" as byte count\n\n",
+                   UPDATER_NUM_PARSED_FAILURE, name, bytes_str);
         free(bytes_str);
         return NULL;
     }
@@ -1339,8 +1340,8 @@ Value* ApplyPatchSpaceFn(const char* name, State* state,
 
 Value* ApplyPatchFn(const char* name, State* state, int argc, Expr* argv[]) {
     if (argc < 6 || (argc % 2) == 1) {
-        return ErrorAbort(state, "%s(): expected at least 6 args and an "
-                                 "even number, got %d",
+        return ErrorAbort(state, "E%d: %s(): expected at least 6 args and an "
+                                 "even number, got %d", UPDATER_ARGS_COUNT_UNEXPECTED,
                           name, argc);
     }
 
@@ -1356,8 +1357,8 @@ Value* ApplyPatchFn(const char* name, State* state, int argc, Expr* argv[]) {
     char* endptr;
     size_t target_size = strtol(target_size_str, &endptr, 10);
     if (target_size == 0 && endptr == target_size_str) {
-        ErrorAbort(state, "%s(): can't parse \"%s\" as byte count",
-                   name, target_size_str);
+        ErrorAbort(state, "E%d: %s(): can't parse \"%s\" as byte count",
+                   UPDATER_NUM_PARSED_FAILURE, name, target_size_str);
         free(source_filename);
         free(target_filename);
         free(target_sha1);
@@ -1371,11 +1372,11 @@ Value* ApplyPatchFn(const char* name, State* state, int argc, Expr* argv[]) {
     int i;
     for (i = 0; i < patchcount; ++i) {
         if (patches[i*2]->type != VAL_STRING) {
-            ErrorAbort(state, "%s(): sha-1 #%d is not string", name, i);
+            ErrorAbort(state, "E%d: %s(): sha-1 #%d is not string", UPDATER_SHA1_NOT_STR, name, i);
             break;
         }
         if (patches[i*2+1]->type != VAL_BLOB) {
-            ErrorAbort(state, "%s(): patch #%d is not blob", name, i);
+            ErrorAbort(state, "E%d: %s(): patch #%d is not blob", UPDATER_PATCH_NOT_BLOB, name, i);
             break;
         }
     }
@@ -1416,8 +1417,8 @@ Value* ApplyPatchFn(const char* name, State* state, int argc, Expr* argv[]) {
 Value* ApplyPatchCheckFn(const char* name, State* state,
                          int argc, Expr* argv[]) {
     if (argc < 1) {
-        return ErrorAbort(state, "%s(): expected at least 1 arg, got %d",
-                          name, argc);
+        return ErrorAbort(state, "E%d: %s(): expected at least 1 arg, got %d",
+                          UPDATER_ARGS_COUNT_UNEXPECTED, name, argc);
     }
 
     char* filename = NULL;
@@ -1468,7 +1469,7 @@ Value* UIPrintFn(const char* name, State* state, int argc, Expr* argv[]) {
 
 Value* WipeCacheFn(const char* name, State* state, int argc, Expr* argv[]) {
     if (argc != 0) {
-        return ErrorAbort(state, "%s() expects no args, got %d", name, argc);
+        return ErrorAbort(state, "E%d: %s() expects no args, got %d", UPDATER_ARGS_COUNT_UNEXPECTED, name, argc);
     }
     fprintf(((UpdaterInfo*)(state->cookie))->cmd_pipe, "wipe_cache\n");
     return StringValue(strdup("t"));
@@ -1476,7 +1477,7 @@ Value* WipeCacheFn(const char* name, State* state, int argc, Expr* argv[]) {
 
 Value* RunProgramFn(const char* name, State* state, int argc, Expr* argv[]) {
     if (argc < 1) {
-        return ErrorAbort(state, "%s() expects at least 1 arg", name);
+        return ErrorAbort(state, "E%d: %s() expects at least 1 arg", UPDATER_ARGS_COUNT_UNEXPECTED, name);
     }
     char** args = ReadVarArgs(state, argc, argv);
     if (args == NULL) {
@@ -1530,7 +1531,7 @@ Value* RunProgramFn(const char* name, State* state, int argc, Expr* argv[]) {
 //
 Value* Sha1CheckFn(const char* name, State* state, int argc, Expr* argv[]) {
     if (argc < 1) {
-        return ErrorAbort(state, "%s() expects at least 1 arg", name);
+        return ErrorAbort(state, "E%d: %s() expects at least 1 arg", UPDATER_ARGS_COUNT_UNEXPECTED, name);
     }
 
     Value** args = ReadValueVarArgs(state, argc, argv);
@@ -1581,7 +1582,7 @@ Value* Sha1CheckFn(const char* name, State* state, int argc, Expr* argv[]) {
 // is actually a FileContents*).
 Value* ReadFileFn(const char* name, State* state, int argc, Expr* argv[]) {
     if (argc != 1) {
-        return ErrorAbort(state, "%s() expects 1 arg, got %d", name, argc);
+        return ErrorAbort(state, "E%d: %s() expects 1 arg, got %d", UPDATER_ARGS_COUNT_UNEXPECTED, name, argc);
     }
     char* filename;
     if (ReadArgs(state, argv, 1, &filename) < 0) return NULL;
@@ -1616,7 +1617,7 @@ Value* ReadFileFn(const char* name, State* state, int argc, Expr* argv[]) {
 // partition.
 Value* RebootNowFn(const char* name, State* state, int argc, Expr* argv[]) {
     if (argc != 2) {
-        return ErrorAbort(state, "%s() expects 2 args, got %d", name, argc);
+        return ErrorAbort(state, "E%d: %s() expects 2 args, got %d", UPDATER_ARGS_COUNT_UNEXPECTED, name, argc);
     }
 
     char* filename;
@@ -1642,7 +1643,7 @@ Value* RebootNowFn(const char* name, State* state, int argc, Expr* argv[]) {
 
     sleep(5);
     free(property);
-    ErrorAbort(state, "%s() failed to reboot", name);
+    ErrorAbort(state, "E%d: %s() failed to reboot", UPDATER_REBOOT_FAILURE, name);
     return NULL;
 }
 
@@ -1658,7 +1659,7 @@ Value* RebootNowFn(const char* name, State* state, int argc, Expr* argv[]) {
 // bytes.
 Value* SetStageFn(const char* name, State* state, int argc, Expr* argv[]) {
     if (argc != 2) {
-        return ErrorAbort(state, "%s() expects 2 args, got %d", name, argc);
+        return ErrorAbort(state, "E%d: %s() expects 2 args, got %d", UPDATER_ARGS_COUNT_UNEXPECTED, name, argc);
     }
 
     char* filename;
@@ -1688,7 +1689,7 @@ Value* SetStageFn(const char* name, State* state, int argc, Expr* argv[]) {
 // is the block device for the misc partition.
 Value* GetStageFn(const char* name, State* state, int argc, Expr* argv[]) {
     if (argc != 1) {
-        return ErrorAbort(state, "%s() expects 1 arg, got %d", name, argc);
+        return ErrorAbort(state, "E%d: %s() expects 1 arg, got %d", UPDATER_ARGS_COUNT_UNEXPECTED, name, argc);
     }
 
     char* filename;
@@ -1706,7 +1707,7 @@ Value* GetStageFn(const char* name, State* state, int argc, Expr* argv[]) {
 
 Value* WipeBlockDeviceFn(const char* name, State* state, int argc, Expr* argv[]) {
     if (argc != 2) {
-        return ErrorAbort(state, "%s() expects 2 args, got %d", name, argc);
+        return ErrorAbort(state, "E%d: %s() expects 2 args, got %d", UPDATER_ARGS_COUNT_UNEXPECTED, name, argc);
     }
 
     char* filename;
@@ -1727,7 +1728,7 @@ Value* WipeBlockDeviceFn(const char* name, State* state, int argc, Expr* argv[])
 
 Value* EnableRebootFn(const char* name, State* state, int argc, Expr* argv[]) {
     if (argc != 0) {
-        return ErrorAbort(state, "%s() expects no args, got %d", name, argc);
+        return ErrorAbort(state, "E%d: %s() expects no args, got %d", UPDATER_ARGS_COUNT_UNEXPECTED, name, argc);
     }
     UpdaterInfo* ui = (UpdaterInfo*)(state->cookie);
     fprintf(ui->cmd_pipe, "enable_reboot\n");
@@ -1736,12 +1737,12 @@ Value* EnableRebootFn(const char* name, State* state, int argc, Expr* argv[]) {
 
 Value* Tune2FsFn(const char* name, State* state, int argc, Expr* argv[]) {
     if (argc == 0) {
-        return ErrorAbort(state, "%s() expects args, got %d", name, argc);
+        return ErrorAbort(state, "E%d: %s() expects args, got %d", UPDATER_ARGS_COUNT_UNEXPECTED, name, argc);
     }
 
     char** args = ReadVarArgs(state, argc, argv);
     if (args == NULL) {
-        return ErrorAbort(state, "%s() could not read args", name);
+        return ErrorAbort(state, "E%d: %s() could not read args", UPDATER_ARGS_READ_FAILURE, name);
     }
 
     int i;
@@ -1760,7 +1761,7 @@ Value* Tune2FsFn(const char* name, State* state, int argc, Expr* argv[]) {
     free(args2[0]);
     free(args2);
     if (result != 0) {
-        return ErrorAbort(state, "%s() returned error code %d", name, result);
+        return ErrorAbort(state, "E%d: %s() returned error code %d", UPDATER_TUNE_TO_FS_FAILURE, name, result);
     }
     return StringValue(strdup("t"));
 }

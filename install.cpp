@@ -35,22 +35,12 @@
 #include "roots.h"
 #include "verifier.h"
 #include "ui.h"
+#include "error_code.h"
 
 extern RecoveryUI* ui;
 
 #define ASSUMED_UPDATE_BINARY_NAME  "META-INF/com/google/android/update-binary"
 #define PUBLIC_KEYS_FILE "/res/keys"
-
-#define RECOVERY_FILEMOUNT_FAILURE   3013
-#define RECOVERY_FILEMAP_FAILURE     3014
-#define RECOVERY_KEYLOADED_FAILURE   3015
-#define RECOVERY_BINARY_FAILURE      3016
-#define RECOVERY_PARTITIONWRITE_FAILURE   3017
-#define RECOVERY_FILECREATE_FAILURE  3018
-#define RECOVERY_FILECOPY_FAILURE    3019
-#define RECOVERY_BATTERY_LOW         3020
-#define RECOVERY_ZIPVERIFIED_FAILURE 3021
-#define RECOVERY_ZIPOPENED_FAILURE   3022
 
 #define BATTERY_CAPCITY_FILE "/sys/class/power_supply/battery/capacity"
 #define BATTERY_STATUS_FILE  "/sys/class/power_supply/battery/status"
