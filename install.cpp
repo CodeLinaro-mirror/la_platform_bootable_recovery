@@ -47,6 +47,8 @@ static const float VERIFICATION_PROGRESS_FRACTION = 0.25;
 static const float DEFAULT_FILES_PROGRESS_FRACTION = 0.4;
 static const float DEFAULT_IMAGE_PROGRESS_FRACTION = 0.1;
 
+static const char *RECOVERYUPDATER_COOKIE = "/cache/recoveryupgrade/RECOVERY_UPGRADE_DONE";
+
 // If the package contains an update binary, extract it and run it.
 static int
 try_update_binary(const char* path, ZipArchive* zip, bool* wipe_cache) {
@@ -361,5 +363,18 @@ install_package(const char* path, bool* wipe_cache, const char* install_file,
         fputc('\n', install_log);
         fclose(install_log);
     }
+
+    // regardless of whether OTA-upgrade failed or not,
+    // clear any existing cookie.
+    int err = 0, ret = unlink(RECOVERYUPDATER_COOKIE); // remove any existing cookie
+    err = errno;
+
+    if (!ret) {
+        printf("\nupdater_binary exited without any errors.\n"
+               "Removing any existing cookie!! \n");
+    } else {
+        printf("\nFailure in removing cookie, %s\n", strerror(err));
+    }
+
     return result;
 }
