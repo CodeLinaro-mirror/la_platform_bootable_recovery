@@ -328,11 +328,7 @@ Value* MountFn(const char* name, State* state, int argc, Expr* argv[]) {
     } else if ((strcmp(fs_type, "ubifs") == 0)
                || (strcmp(fs_type, "ext4") == 0)) {
         Volume *v = 0;;
-        if (strcmp(location, "userdata") == 0) {
-            v = volume_for_path("/data");
-        } else if (strcmp(location, "system") == 0) {
-            v = volume_for_path("/system");
-        }
+        v = volume_for_path(mount_point);
         if (!v) {
             fprintf(stderr, "%s: failed to locate %s \"%s\"",
                     name, fs_type, location);
@@ -535,11 +531,7 @@ Value* FormatFn(const char* name, State* state, int argc, Expr* argv[]) {
     } else if (strcmp(fs_type, "ubifs") == 0) {
         Volume *v = 0;;
         UpdaterInfo* ui = (UpdaterInfo*)(state->cookie);
-        if (strcmp(location, "userdata") == 0) {
-            v = volume_for_path("/data");
-        } else if (strcmp(location, "system") == 0) {
-            v = volume_for_path("/system");
-        }
+        v = volume_for_path(mount_point);
         if (!v) {
             fprintf(stderr, "%s: failed to locate ubifs volume \"%s\"", name, location);
             result = strdup("");
@@ -585,11 +577,7 @@ Value* FormatFn(const char* name, State* state, int argc, Expr* argv[]) {
     } else if (strcmp(fs_type, "ext4") == 0) {
         Volume *v = 0;;
         UpdaterInfo* ui = (UpdaterInfo*)(state->cookie);
-        if (strcmp(location, "userdata") == 0) {
-            v = volume_for_path("/data");
-        } else if (strcmp(location, "system") == 0) {
-            v = volume_for_path("/system");
-        }
+        v = volume_for_path(mount_point);
         if (!v) {
             fprintf(stderr, "%s: failed to locate ext4 filesystem \"%s\"", name, location);
             result = strdup("");
