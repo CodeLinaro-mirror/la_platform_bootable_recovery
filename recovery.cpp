@@ -1296,7 +1296,7 @@ main(int argc, char **argv) {
         FILE *fp = NULL;
         char *file_context_path = NULL;
 
-        fp = fopen(DATA_FILE_CONTEXTS, "w");
+        fp = fopen(DATA_FILE_CONTEXTS, "r");
         if (fp != NULL) {
             fclose(fp);
             file_context_path = DATA_FILE_CONTEXTS;
