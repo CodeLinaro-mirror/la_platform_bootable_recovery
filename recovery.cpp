@@ -201,6 +201,7 @@ FILE*
 fopen_path(const char *path, const char *mode) {
     if (ensure_path_mounted(path) != 0) {
         LOGE("Can't mount %s\n", path);
+        printf("Can't mount %s\n", path);
         return NULL;
     }
 
@@ -209,6 +210,9 @@ fopen_path(const char *path, const char *mode) {
     if (strchr("wa", mode[0])) dirCreateHierarchy(path, 0777, NULL, 1, sehandle);
 
     FILE *fp = fopen(path, mode);
+    if(fp == NULL) {
+        printf("%s: %d", __func__, errno);
+    }
     return fp;
 }
 
@@ -734,6 +738,172 @@ static bool yes_no(Device* device, const char* question1, const char* question2)
     return (chosen_item == 1);
 }
 
+#define FDR_STATUS_FILE    ("/cache/fdr/status")
+#define DATA_FILE_CONTEXTS ("/cache/recovery/data_file_contexts")
+
+/*
+ *  Safely unmount "/data" Partition.
+ *  Returns:
+ *     false: if unmount fails
+ *     true:  if unmount passes
+ */
+static bool unmount_data_partition() {
+    if( ensure_path_unmounted("/data/") != 0) {
+        return false;
+    }
+    return true;
+}
+
+/*
+ *  Update "Factory Data Reset" status in FDR_STATUS_FILE file.
+ *  Param:
+ *     status: status byte to be set
+ *  Returns:
+ *     false: If there is any failure during this call
+ *     true:  If operation passes
+ */
+static bool set_fdr_status(char status) {
+    if (!(status == 'S' || status == 'F' || status == 'P' || status == 'D')) {
+        return false;
+    }
+
+    if (system("mkdir -p /cache/fdr/") == -1) {
+        return false;
+    }
+
+    FILE *fp = fopen(FDR_STATUS_FILE, "w");
+
+    if(fp == NULL) {
+        printf("%s: Can't open the file %s %d\n", __func__, FDR_STATUS_FILE, errno);
+        return false;
+    }
+
+    int retval = fprintf(fp, "%c", status);
+
+    printf("The return after writing %c into %s %d \n",
+            status, FDR_STATUS_FILE, retval);
+
+    check_and_fclose(fp, FDR_STATUS_FILE);
+
+    if(retval < 0) {
+        return false;
+    }
+    return true;
+}
+
+/*
+ * get_target_name populates target name string in "target" param.
+ */
+static bool get_target_name(char* target) {
+    bool ret = false;
+
+    if (target == NULL)
+        return ret;
+
+    FILE* fp = fopen("/target","r");
+
+    if(fp == NULL ){
+        printf("%s: Couldn't open /target %d\n", __func__, errno);
+        ret = false;
+    } else{
+        if(fscanf(fp,"%s",target) != EOF)
+            ret = false;
+        check_and_fclose(fp,"/target");
+        ret = true;
+    }
+    return ret;
+}
+
+/*
+ * get_usrfs_tar_path: populates "usrfs_tar_path" param with
+ * fully qualified path to the tar file.
+ */
+static bool get_usrfs_tar_path(char* usrfs_tar_path){
+    char target[30];
+
+    if (false == get_target_name(target))
+        return false;
+
+    sprintf(usrfs_tar_path, "/cache/%s.usrfs.tar", target);
+    return true;
+}
+
+/*
+ * Checks for the tar availability and usability
+ */
+static bool check_userfs_tar_sanity() {
+    char userfs_tar_path[75];
+
+    get_usrfs_tar_path(userfs_tar_path);
+    const char* path= (const char*)userfs_tar_path;
+
+    if(access(path, R_OK ) == -1 ){
+        printf("Can't read the usrfs.tar file");
+        return false;
+    }
+
+    char cmd[100];
+
+    sprintf(cmd,"tar tf %s", userfs_tar_path);
+    printf("The command:\n    %s\n", cmd);
+    const char* command=(const char*) cmd;
+    if(system(command) == -1){
+        printf("Could not execute %s",command);
+        return false;
+    }
+
+    return true;
+}
+
+/*
+ *  Extract /cache/${target-name}.usrfs.tar into /data partition.
+*/
+static bool copy_userfs_tar_to_userdatafs() {
+    char userfs_tar_path[75];
+
+    get_usrfs_tar_path(userfs_tar_path);
+    const char* path = (const char*) userfs_tar_path;
+
+    if ((ensure_path_mounted("/data") != -1)
+        && (ensure_path_mounted(path)!= -1)) {
+        char cmd[100];
+        sprintf(cmd,"tar xf %s -C /data/", path);
+        const char* command = (const char*)cmd;
+        if(system(command) == -1) {
+            return false;
+        }
+        return true;
+    }
+
+    printf("/cache/apq8009.userfs.tar couldn't be mounted successfuly\n");
+    printf("couldn't extract the userfs filesystem into /data");
+    return false;
+}
+
+/*
+ * factory-data-reset
+ */
+static bool wipe_data_ext(int should_confirm, Device* device) {
+    if (should_confirm && !yes_no(device, "Wipe all user data?",
+                                          "  THIS CAN NOT BE UNDONE!")) {
+        return false;
+    }
+
+    modified_flash = true;
+
+    ui->Print("\n-- Wiping data...\n");
+    bool success =
+        check_userfs_tar_sanity() &&
+        set_fdr_status('F') &&
+        device->PreWipeData() &&
+        erase_volume("/data") &&
+        device->PostWipeData() &&
+        set_fdr_status('P');
+    printf("The Data Wipe %s.\n",success ? "complete" : "failed");
+    ui->Print("Data wipe %s.\n", success ? "complete" : "failed");
+    return success;
+}
+
 // Return true on success.
 static bool wipe_data(int should_confirm, Device* device) {
     if (should_confirm && !yes_no(device, "Wipe all user data?", "  THIS CAN NOT BE UNDONE!")) {
@@ -1123,8 +1293,59 @@ main(int argc, char **argv) {
             }
         }
     } else if (should_wipe_data) {
-        if (!wipe_data(false, device)) {
-            status = INSTALL_ERROR;
+        FILE *fp = NULL;
+        char *file_context_path = NULL;
+
+        fp = fopen(DATA_FILE_CONTEXTS, "r");
+        if (fp != NULL) {
+            fclose(fp);
+            file_context_path = DATA_FILE_CONTEXTS;
+        } else {
+            fp = fopen("/run/file_contexts", "w");
+            if (fp != NULL) {
+               fprintf(fp, "/data/.*   system_u:object_r:default_t:s0");
+               fclose(fp);
+               file_context_path = "/run/file_contexts";
+            } else {
+               printf("Could not create /run/file_contexts\n");
+            }
+        }
+
+        struct selinux_opt seopts_data[] = {
+            { SELABEL_OPT_PATH, file_context_path }
+        };
+
+        sehandle = selabel_open(SELABEL_CTX_FILE, seopts_data, 1);
+
+        // If usrfs.tar exists, attempt a default file restoration
+        // after wipe data completes
+        char usrfs_tar_path[75];
+
+        ensure_path_mounted("/cache/");
+        get_usrfs_tar_path(usrfs_tar_path);
+
+        if((access((const char* )usrfs_tar_path, F_OK) == 0)) {
+            if (set_fdr_status('S')) {
+                if (!wipe_data_ext(false, device)) {
+                    status = INSTALL_ERROR;
+                } else {
+                    if (copy_userfs_tar_to_userdatafs()
+                        && unmount_data_partition()
+                        && set_fdr_status('D')) {
+                        status = INSTALL_SUCCESS;
+                    } else {
+                        status = INSTALL_ERROR;
+                    }
+                }
+            } else {
+                status = INSTALL_ERROR;
+            }
+        } else {
+            LOGE("Couldn't find /cache/apq8009.usrfs.tar. Proceeding legacy way of wiping the data");
+
+            if (!wipe_data(false, device)) {
+                status = INSTALL_ERROR;
+            }
         }
     } else if (should_wipe_cache) {
         if (!wipe_cache(false, device)) {
