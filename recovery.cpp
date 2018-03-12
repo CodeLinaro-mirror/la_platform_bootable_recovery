@@ -1293,29 +1293,6 @@ main(int argc, char **argv) {
             }
         }
     } else if (should_wipe_data) {
-        FILE *fp = NULL;
-        char *file_context_path = NULL;
-
-        fp = fopen(DATA_FILE_CONTEXTS, "r");
-        if (fp != NULL) {
-            fclose(fp);
-            file_context_path = DATA_FILE_CONTEXTS;
-        } else {
-            fp = fopen("/run/file_contexts", "w");
-            if (fp != NULL) {
-               fprintf(fp, "/data/.*   system_u:object_r:default_t:s0");
-               fclose(fp);
-               file_context_path = "/run/file_contexts";
-            } else {
-               printf("Could not create /run/file_contexts\n");
-            }
-        }
-
-        struct selinux_opt seopts_data[] = {
-            { SELABEL_OPT_PATH, file_context_path }
-        };
-
-        sehandle = selabel_open(SELABEL_CTX_FILE, seopts_data, 1);
 
         // If usrfs.tar exists, attempt a default file restoration
         // after wipe data completes
@@ -1325,6 +1302,35 @@ main(int argc, char **argv) {
         get_usrfs_tar_path(usrfs_tar_path);
 
         if((access((const char* )usrfs_tar_path, F_OK) == 0)) {
+
+          /**
+          ** Provide Selinux file context for data files
+          **
+          **/
+            FILE *fp = NULL;
+            char *file_context_path = NULL;
+
+            fp = fopen(DATA_FILE_CONTEXTS, "r");
+            if (fp != NULL) {
+                fclose(fp);
+                file_context_path = DATA_FILE_CONTEXTS;
+            } else {
+                fp = fopen("/run/file_contexts", "w");
+                if (fp != NULL) {
+                    fprintf(fp, "/data/.*   system_u:object_r:default_t:s0");
+                    fclose(fp);
+                    file_context_path = "/run/file_contexts";
+                } else {
+                 printf("Could not create /run/file_contexts\n");
+                }
+            }
+
+            struct selinux_opt seopts_data[] = {
+                { SELABEL_OPT_PATH, file_context_path }
+            };
+
+            sehandle = selabel_open(SELABEL_CTX_FILE, seopts_data, 1);
+
             if (set_fdr_status('S')) {
                 if (!wipe_data_ext(false, device)) {
                     status = INSTALL_ERROR;
