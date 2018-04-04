@@ -16,6 +16,8 @@
  */
 
 #include <string.h>
+#include <stdlib.h>
+#include <stdio.h>
 
 #include "expr.h"
 #include "yydefs.h"
@@ -25,13 +27,31 @@ int gLine = 1;
 int gColumn = 1;
 int gPos = 0;
 
-// TODO: enforce MAX_STRING_LEN during lexing
-char string_buffer[MAX_STRING_LEN];
+char *string_buffer = NULL;
+size_t string_buffer_size = MAX_STRING_LEN;
 char* string_pos;
 
 #define ADVANCE do {yylloc.start=gPos; yylloc.end=gPos+yyleng; \
                     gColumn+=yyleng; gPos+=yyleng;} while(0)
 
+static void check_string_buffer(void)
+{
+    char* p;
+    /* the last one space used to store '\0', so -1 */
+    if ((string_pos - string_buffer) > (string_buffer_size-1)) {
+        string_buffer_size += MAX_STRING_LEN;
+        p = realloc(string_buffer, string_buffer_size);
+        if(NULL == p) {
+            fprintf(stderr, "edify realloc string_buffer failed!");
+            exit(-1);
+        }
+        /* adjust the string buffer and position */
+        string_pos = p + (string_pos-string_buffer);
+        string_buffer = p;
+
+        fprintf(stdout, "edify realloc string_buffer as size %d!\n", (int)string_buffer_size);
+    }
+}
 %}
 
 %x STR
@@ -43,6 +63,14 @@ char* string_pos;
 
 \" {
     BEGIN(STR);
+    if (NULL == string_buffer) {
+        string_buffer = malloc(string_buffer_size);
+        if (NULL == string_buffer) {
+            fprintf(stderr, "edify malloc string_buffer failed!");
+            exit(-1);
+        }
+    }
+
     string_pos = string_buffer;
     yylloc.start = gPos;
     ++gColumn;
@@ -60,10 +88,10 @@ char* string_pos;
       return STRING;
   }
 
-  \\n   { gColumn += yyleng; gPos += yyleng; *string_pos++ = '\n'; }
-  \\t   { gColumn += yyleng; gPos += yyleng;  *string_pos++ = '\t'; }
-  \\\"  { gColumn += yyleng; gPos += yyleng;  *string_pos++ = '\"'; }
-  \\\\  { gColumn += yyleng; gPos += yyleng;  *string_pos++ = '\\'; }
+  \\n   { gColumn += yyleng; gPos += yyleng; *string_pos++ = '\n'; check_string_buffer(); }
+  \\t   { gColumn += yyleng; gPos += yyleng;  *string_pos++ = '\t'; check_string_buffer(); }
+  \\\"  { gColumn += yyleng; gPos += yyleng;  *string_pos++ = '\"'; check_string_buffer(); }
+  \\\\  { gColumn += yyleng; gPos += yyleng;  *string_pos++ = '\\'; check_string_buffer(); }
 
   \\x[0-9a-fA-F]{2} {
       gColumn += yyleng;
@@ -71,6 +99,7 @@ char* string_pos;
       int val;
       sscanf(yytext+2, "%x", &val);
       *string_pos++ = val;
+      check_string_buffer();
   }
 
   \n {
@@ -78,12 +107,14 @@ char* string_pos;
       ++gPos;
       gColumn = 1;
       *string_pos++ = yytext[0];
+      check_string_buffer();
   }
 
   . {
       ++gColumn;
       ++gPos;
       *string_pos++ = yytext[0];
+      check_string_buffer();
   }
 }
 
