@@ -305,11 +305,6 @@ static void redirect_stdio(const char* filename) {
   }
 }
 
-static bool SetUsbConfig(const std::string& state) {
-  android::base::SetProperty("sys.usb.config", state);
-  return android::base::WaitForProperty("sys.usb.state", state);
-}
-
 int main(int argc, char** argv) {
   // We don't have logcat yet under recovery; so we'll print error on screen and log to stdout
   // (which is redirected to recovery.log) as we used to do.
@@ -369,7 +364,8 @@ int main(int argc, char** argv) {
         std::string option = OPTIONS[option_index].name;
         if (option == "locale") {
           locale = optarg;
-        } else if (option == "fastboot") {
+        } else if (option == "fastboot" &&
+                   android::base::GetBoolProperty("ro.boot.logical_partitions", false)) {
           fastboot = true;
         }
         break;
@@ -428,6 +424,10 @@ int main(int argc, char** argv) {
 
   if (!has_cache) {
     device->RemoveMenuItemForAction(Device::WIPE_CACHE);
+  }
+
+  if (!android::base::GetBoolProperty("ro.boot.logical_partitions", false)) {
+    device->RemoveMenuItemForAction(Device::ENTER_FASTBOOT);
   }
 
   ui->SetBackground(RecoveryUI::NONE);
