@@ -29,6 +29,7 @@ cc_defaults {
         "libcutils",
         "liblog",
         "libpng",
+        "libprocessgroup",
         "libselinux",
         "libz",
         "libziparchive",
@@ -94,6 +95,7 @@ librecovery_static_libs = [
     "libhidltransport",
     "libhwbinder_noltopgo",
     "libbinderthreadstate",
+    "liblp",
     "libvndksupport",
     "libtinyxml2",
 ]
