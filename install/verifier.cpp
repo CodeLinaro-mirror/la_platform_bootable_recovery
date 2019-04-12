@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-#include "verifier.h"
+#include "install/verifier.h"
 
 #include <errno.h>
 #include <stdio.h>
@@ -36,10 +36,8 @@
 #include <openssl/rsa.h>
 #include <ziparchive/zip_archive.h>
 
-#include "asn1_decoder.h"
 #include "otautil/print_sha1.h"
-
-static constexpr size_t MiB = 1024 * 1024;
+#include "private/asn1_decoder.h"
 
 /*
  * Simple version of PKCS#7 SignedData extraction. This extracts the
@@ -84,10 +82,8 @@ static bool read_pkcs7(const uint8_t* pkcs7_der, size_t pkcs7_der_len,
   }
 
   std::unique_ptr<asn1_context> signed_data_seq(signed_data_app->asn1_sequence_get());
-  if (signed_data_seq == nullptr ||
-      !signed_data_seq->asn1_sequence_next() ||
-      !signed_data_seq->asn1_sequence_next() ||
-      !signed_data_seq->asn1_sequence_next() ||
+  if (signed_data_seq == nullptr || !signed_data_seq->asn1_sequence_next() ||
+      !signed_data_seq->asn1_sequence_next() || !signed_data_seq->asn1_sequence_next() ||
       !signed_data_seq->asn1_constructed_skip_all()) {
     return false;
   }
@@ -98,11 +94,8 @@ static bool read_pkcs7(const uint8_t* pkcs7_der, size_t pkcs7_der_len,
   }
 
   std::unique_ptr<asn1_context> sig_seq(sig_set->asn1_sequence_get());
-  if (sig_seq == nullptr ||
-      !sig_seq->asn1_sequence_next() ||
-      !sig_seq->asn1_sequence_next() ||
-      !sig_seq->asn1_sequence_next() ||
-      !sig_seq->asn1_sequence_next()) {
+  if (sig_seq == nullptr || !sig_seq->asn1_sequence_next() || !sig_seq->asn1_sequence_next() ||
+      !sig_seq->asn1_sequence_next() || !sig_seq->asn1_sequence_next()) {
     return false;
   }
 
@@ -117,19 +110,9 @@ static bool read_pkcs7(const uint8_t* pkcs7_der, size_t pkcs7_der_len,
   return true;
 }
 
-/*
- * Looks for an RSA signature embedded in the .ZIP file comment given the path to the zip. Verifies
- * that it matches one of the given public keys. A callback function can be optionally provided for
- * posting the progress.
- *
- * Returns VERIFY_SUCCESS or VERIFY_FAILURE (if any error is encountered or no key matches the
- * signature).
- */
-int verify_file(const unsigned char* addr, size_t length, const std::vector<Certificate>& keys,
-                const std::function<void(float)>& set_progress) {
-  if (set_progress) {
-    set_progress(0.0);
-  }
+int verify_file(VerifierInterface* package, const std::vector<Certificate>& keys) {
+  CHECK(package);
+  package->SetProgress(0.0);
 
   // An archive with a whole-file signature will end in six bytes:
   //
@@ -140,13 +123,18 @@ int verify_file(const unsigned char* addr, size_t length, const std::vector<Cert
   // the whole comment.
 
 #define FOOTER_SIZE 6
+  uint64_t length = package->GetPackageSize();
 
   if (length < FOOTER_SIZE) {
     LOG(ERROR) << "not big enough to contain footer";
     return VERIFY_FAILURE;
   }
 
-  const unsigned char* footer = addr + length - FOOTER_SIZE;
+  uint8_t footer[FOOTER_SIZE];
+  if (!package->ReadFullyAtOffset(footer, FOOTER_SIZE, length - FOOTER_SIZE)) {
+    LOG(ERROR) << "Failed to read footer";
+    return VERIFY_FAILURE;
+  }
 
   if (footer[2] != 0xff || footer[3] != 0xff) {
     LOG(ERROR) << "footer is wrong";
@@ -159,8 +147,8 @@ int verify_file(const unsigned char* addr, size_t length, const std::vector<Cert
             << " bytes from end";
 
   if (signature_start > comment_size) {
-    LOG(ERROR) << "signature start: " << signature_start << " is larger than comment size: "
-               << comment_size;
+    LOG(ERROR) << "signature start: " << signature_start
+               << " is larger than comment size: " << comment_size;
     return VERIFY_FAILURE;
   }
 
@@ -182,9 +170,13 @@ int verify_file(const unsigned char* addr, size_t length, const std::vector<Cert
   // Determine how much of the file is covered by the signature. This is everything except the
   // signature data and length, which includes all of the EOCD except for the comment length field
   // (2 bytes) and the comment data.
-  size_t signed_len = length - eocd_size + EOCD_HEADER_SIZE - 2;
+  uint64_t signed_len = length - eocd_size + EOCD_HEADER_SIZE - 2;
 
-  const unsigned char* eocd = addr + length - eocd_size;
+  uint8_t eocd[eocd_size];
+  if (!package->ReadFullyAtOffset(eocd, eocd_size, length - eocd_size)) {
+    LOG(ERROR) << "Failed to read EOCD of " << eocd_size << " bytes";
+    return VERIFY_FAILURE;
+  }
 
   // If this is really is the EOCD record, it will begin with the magic number $50 $4b $05 $06.
   if (eocd[0] != 0x50 || eocd[1] != 0x4b || eocd[2] != 0x05 || eocd[3] != 0x06) {
@@ -192,8 +184,8 @@ int verify_file(const unsigned char* addr, size_t length, const std::vector<Cert
     return VERIFY_FAILURE;
   }
 
-  for (size_t i = 4; i < eocd_size-3; ++i) {
-    if (eocd[i] == 0x50 && eocd[i+1] == 0x4b && eocd[i+2] == 0x05 && eocd[i+3] == 0x06) {
+  for (size_t i = 4; i < eocd_size - 3; ++i) {
+    if (eocd[i] == 0x50 && eocd[i + 1] == 0x4b && eocd[i + 2] == 0x05 && eocd[i + 3] == 0x06) {
       // If the sequence $50 $4b $05 $06 appears anywhere after the real one, libziparchive will
       // find the later (wrong) one, which could be exploitable. Fail the verification if this
       // sequence occurs anywhere after the real one.
@@ -206,8 +198,12 @@ int verify_file(const unsigned char* addr, size_t length, const std::vector<Cert
   bool need_sha256 = false;
   for (const auto& key : keys) {
     switch (key.hash_len) {
-      case SHA_DIGEST_LENGTH: need_sha1 = true; break;
-      case SHA256_DIGEST_LENGTH: need_sha256 = true; break;
+      case SHA_DIGEST_LENGTH:
+        need_sha1 = true;
+        break;
+      case SHA256_DIGEST_LENGTH:
+        need_sha256 = true;
+        break;
     }
   }
 
@@ -216,24 +212,29 @@ int verify_file(const unsigned char* addr, size_t length, const std::vector<Cert
   SHA1_Init(&sha1_ctx);
   SHA256_Init(&sha256_ctx);
 
+  std::vector<HasherUpdateCallback> hashers;
+  if (need_sha1) {
+    hashers.emplace_back(
+        std::bind(&SHA1_Update, &sha1_ctx, std::placeholders::_1, std::placeholders::_2));
+  }
+  if (need_sha256) {
+    hashers.emplace_back(
+        std::bind(&SHA256_Update, &sha256_ctx, std::placeholders::_1, std::placeholders::_2));
+  }
+
   double frac = -1.0;
-  size_t so_far = 0;
+  uint64_t so_far = 0;
   while (so_far < signed_len) {
-    // On a Nexus 5X, experiment showed 16MiB beat 1MiB by 6% faster for a
-    // 1196MiB full OTA and 60% for an 89MiB incremental OTA.
-    // http://b/28135231.
-    size_t size = std::min(signed_len - so_far, 16 * MiB);
+    // On a Nexus 5X, experiment showed 16MiB beat 1MiB by 6% faster for a 1196MiB full OTA and
+    // 60% for an 89MiB incremental OTA. http://b/28135231.
+    uint64_t read_size = std::min<uint64_t>(signed_len - so_far, 16 * MiB);
+    package->UpdateHashAtOffset(hashers, so_far, read_size);
+    so_far += read_size;
 
-    if (need_sha1) SHA1_Update(&sha1_ctx, addr + so_far, size);
-    if (need_sha256) SHA256_Update(&sha256_ctx, addr + so_far, size);
-    so_far += size;
-
-    if (set_progress) {
-      double f = so_far / (double)signed_len;
-      if (f > frac + 0.02 || size == so_far) {
-        set_progress(f);
-        frac = f;
-      }
+    double f = so_far / static_cast<double>(signed_len);
+    if (f > frac + 0.02 || read_size == so_far) {
+      package->SetProgress(f);
+      frac = f;
     }
   }
 
@@ -245,8 +246,8 @@ int verify_file(const unsigned char* addr, size_t length, const std::vector<Cert
   const uint8_t* signature = eocd + eocd_size - signature_start;
   size_t signature_size = signature_start - FOOTER_SIZE;
 
-  LOG(INFO) << "signature (offset: " << std::hex << (length - signature_start) << ", length: "
-            << signature_size << "): " << print_hex(signature, signature_size);
+  LOG(INFO) << "signature (offset: " << std::hex << (length - signature_start)
+            << ", length: " << signature_size << "): " << print_hex(signature, signature_size);
 
   std::vector<uint8_t> sig_der;
   if (!read_pkcs7(signature, signature_size, &sig_der)) {
@@ -371,8 +372,8 @@ bool CheckRSAKey(const std::unique_ptr<RSA, RSADeleter>& rsa) {
   const BIGNUM* out_e;
   RSA_get0_key(rsa.get(), &out_n, &out_e, nullptr /* private exponent */);
   auto modulus_bits = BN_num_bits(out_n);
-  if (modulus_bits != 2048) {
-    LOG(ERROR) << "Modulus should be 2048 bits long, actual: " << modulus_bits;
+  if (modulus_bits != 2048 && modulus_bits != 4096) {
+    LOG(ERROR) << "Modulus should be 2048 or 4096 bits long, actual: " << modulus_bits;
     return false;
   }
 

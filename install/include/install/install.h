@@ -14,15 +14,18 @@
  * limitations under the License.
  */
 
-#ifndef RECOVERY_INSTALL_H_
-#define RECOVERY_INSTALL_H_
+#pragma once
 
 #include <stddef.h>
 
 #include <map>
 #include <string>
+#include <vector>
 
 #include <ziparchive/zip_archive.h>
+
+#include "package.h"
+#include "recovery_ui/ui.h"
 
 enum InstallResult {
   INSTALL_SUCCESS,
@@ -42,16 +45,19 @@ enum class OtaType {
 
 // Installs the given update package. If INSTALL_SUCCESS is returned and *wipe_cache is true on
 // exit, caller should wipe the cache partition.
-int install_package(const std::string& package, bool* wipe_cache, bool needs_mount,
-                    int retry_count);
+int install_package(const std::string& package, bool* wipe_cache, bool needs_mount, int retry_count,
+                    RecoveryUI* ui);
 
-// Verify the package by ota keys. Return true if the package is verified successfully,
-// otherwise return false.
-bool verify_package(const unsigned char* package_data, size_t package_size);
+// Verifies the package by ota keys. Returns true if the package is verified successfully,
+// otherwise returns false.
+bool verify_package(Package* package, RecoveryUI* ui);
 
 // Reads meta data file of the package; parses each line in the format "key=value"; and writes the
 // result to |metadata|. Return true if succeed, otherwise return false.
 bool ReadMetadataFromPackage(ZipArchiveHandle zip, std::map<std::string, std::string>* metadata);
+
+// Reads the "recovery.wipe" entry in the zip archive returns a list of partitions to wipe.
+std::vector<std::string> GetWipePartitionList(Package* wipe_package);
 
 // Verifies the compatibility info in a Treble-compatible package. Returns true directly if the
 // entry doesn't exist.
@@ -61,5 +67,3 @@ bool verify_package_compatibility(ZipArchiveHandle package_zip);
 // Mandatory checks: ota-type, pre-device and serial number(if presents)
 // AB OTA specific checks: pre-build version, fingerprint, timestamp.
 int CheckPackageMetadata(const std::map<std::string, std::string>& metadata, OtaType ota_type);
-
-#endif  // RECOVERY_INSTALL_H_
