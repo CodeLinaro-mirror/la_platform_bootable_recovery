@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-#include "install.h"
+#include "install/install.h"
 
 #include <ctype.h>
 #include <errno.h>
@@ -46,17 +46,21 @@
 #include <android-base/unique_fd.h>
 #include <vintf/VintfObjectRecovery.h>
 
-#include "common.h"
+#include "install/package.h"
+#include "install/verifier.h"
 #include "otautil/error_code.h"
 #include "otautil/paths.h"
+#include "otautil/roots.h"
 #include "otautil/sysutil.h"
 #include "otautil/thermalutil.h"
-#include "private/install.h"
-#include "roots.h"
-#include "ui.h"
-#include "verifier.h"
+#include "private/setup_commands.h"
+#include "recovery_ui/ui.h"
 
 using namespace std::chrono_literals;
+
+static constexpr int kRecoveryApiVersion = 3;
+// Assert the version defined in code and in Android.mk are consistent.
+static_assert(kRecoveryApiVersion == RECOVERY_API_VERSION, "Mismatching recovery API versions.");
 
 // Default allocation of progress bar segments to operations
 static constexpr int VERIFICATION_PROGRESS_TIME = 60;
@@ -292,6 +296,11 @@ int SetUpNonAbUpdateCommands(const std::string& package, ZipArchiveHandle zip, i
     return INSTALL_ERROR;
   }
 
+  // When executing the update binary contained in the package, the arguments passed are:
+  //   - the version number for this interface
+  //   - an FD to which the program can write in order to update the progress bar.
+  //   - the name of the package zip file.
+  //   - an optional argument "retry" if this update is a retry of a failed update attempt.
   *cmd = {
     binary_path,
     std::to_string(kRecoveryApiVersion),
@@ -317,7 +326,7 @@ static void log_max_temperature(int* max_temperature, const std::atomic<bool>& l
 // If the package contains an update binary, extract it and run it.
 static int try_update_binary(const std::string& package, ZipArchiveHandle zip, bool* wipe_cache,
                              std::vector<std::string>* log_buffer, int retry_count,
-                             int* max_temperature) {
+                             int* max_temperature, RecoveryUI* ui) {
   std::map<std::string, std::string> metadata;
   if (!ReadMetadataFromPackage(zip, &metadata)) {
     LOG(ERROR) << "Failed to parse metadata in the zip file";
@@ -334,75 +343,58 @@ static int try_update_binary(const std::string& package, ZipArchiveHandle zip, b
 
   ReadSourceTargetBuild(metadata, log_buffer);
 
-  int pipefd[2];
-  pipe(pipefd);
+  // The updater in child process writes to the pipe to communicate with recovery.
+  android::base::unique_fd pipe_read, pipe_write;
+  // Explicitly disable O_CLOEXEC using 0 as the flags (last) parameter to Pipe
+  // so that the child updater process will recieve a non-closed fd.
+  if (!android::base::Pipe(&pipe_read, &pipe_write, 0)) {
+    PLOG(ERROR) << "Failed to create pipe for updater-recovery communication";
+    return INSTALL_CORRUPT;
+  }
+
+  // The updater-recovery communication protocol.
+  //
+  //   progress <frac> <secs>
+  //       fill up the next <frac> part of of the progress bar over <secs> seconds. If <secs> is
+  //       zero, use `set_progress` commands to manually control the progress of this segment of the
+  //       bar.
+  //
+  //   set_progress <frac>
+  //       <frac> should be between 0.0 and 1.0; sets the progress bar within the segment defined by
+  //       the most recent progress command.
+  //
+  //   ui_print <string>
+  //       display <string> on the screen.
+  //
+  //   wipe_cache
+  //       a wipe of cache will be performed following a successful installation.
+  //
+  //   clear_display
+  //       turn off the text display.
+  //
+  //   enable_reboot
+  //       packages can explicitly request that they want the user to be able to reboot during
+  //       installation (useful for debugging packages that don't exit).
+  //
+  //   retry_update
+  //       updater encounters some issue during the update. It requests a reboot to retry the same
+  //       package automatically.
+  //
+  //   log <string>
+  //       updater requests logging the string (e.g. cause of the failure).
+  //
+
   std::vector<std::string> args;
   if (int update_status =
-          is_ab ? SetUpAbUpdateCommands(package, zip, pipefd[1], &args)
-                : SetUpNonAbUpdateCommands(package, zip, retry_count, pipefd[1], &args);
+          is_ab ? SetUpAbUpdateCommands(package, zip, pipe_write.get(), &args)
+                : SetUpNonAbUpdateCommands(package, zip, retry_count, pipe_write.get(), &args);
       update_status != 0) {
-    close(pipefd[0]);
-    close(pipefd[1]);
     log_buffer->push_back(android::base::StringPrintf("error: %d", kUpdateBinaryCommandFailure));
     return update_status;
   }
 
-  // When executing the update binary contained in the package, the
-  // arguments passed are:
-  //
-  //   - the version number for this interface
-  //
-  //   - an FD to which the program can write in order to update the
-  //     progress bar.  The program can write single-line commands:
-  //
-  //        progress <frac> <secs>
-  //            fill up the next <frac> part of of the progress bar
-  //            over <secs> seconds.  If <secs> is zero, use
-  //            set_progress commands to manually control the
-  //            progress of this segment of the bar.
-  //
-  //        set_progress <frac>
-  //            <frac> should be between 0.0 and 1.0; sets the
-  //            progress bar within the segment defined by the most
-  //            recent progress command.
-  //
-  //        ui_print <string>
-  //            display <string> on the screen.
-  //
-  //        wipe_cache
-  //            a wipe of cache will be performed following a successful
-  //            installation.
-  //
-  //        clear_display
-  //            turn off the text display.
-  //
-  //        enable_reboot
-  //            packages can explicitly request that they want the user
-  //            to be able to reboot during installation (useful for
-  //            debugging packages that don't exit).
-  //
-  //        retry_update
-  //            updater encounters some issue during the update. It requests
-  //            a reboot to retry the same package automatically.
-  //
-  //        log <string>
-  //            updater requests logging the string (e.g. cause of the
-  //            failure).
-  //
-  //   - the name of the package zip file.
-  //
-  //   - an optional argument "retry" if this update is a retry of a failed
-  //   update attempt.
-  //
-
-  // Convert the std::string vector to a NULL-terminated char* vector suitable for execv.
-  auto chr_args = StringVectorToNullTerminatedArray(args);
-
   pid_t pid = fork();
-
   if (pid == -1) {
-    close(pipefd[0]);
-    close(pipefd[1]);
     PLOG(ERROR) << "Failed to fork update binary";
     log_buffer->push_back(android::base::StringPrintf("error: %d", kForkUpdateBinaryFailure));
     return INSTALL_ERROR;
@@ -410,16 +402,18 @@ static int try_update_binary(const std::string& package, ZipArchiveHandle zip, b
 
   if (pid == 0) {
     umask(022);
-    close(pipefd[0]);
+    pipe_read.reset();
+
+    // Convert the std::string vector to a NULL-terminated char* vector suitable for execv.
+    auto chr_args = StringVectorToNullTerminatedArray(args);
     execv(chr_args[0], chr_args.data());
-    // Bug: 34769056
-    // We shouldn't use LOG/PLOG in the forked process, since they may cause
-    // the child process to hang. This deadlock results from an improperly
-    // copied mutex in the ui functions.
+    // We shouldn't use LOG/PLOG in the forked process, since they may cause the child process to
+    // hang. This deadlock results from an improperly copied mutex in the ui functions.
+    // (Bug: 34769056)
     fprintf(stdout, "E:Can't run %s (%s)\n", chr_args[0], strerror(errno));
     _exit(EXIT_FAILURE);
   }
-  close(pipefd[1]);
+  pipe_write.reset();
 
   std::atomic<bool> logger_finished(false);
   std::thread temperature_logger(log_max_temperature, max_temperature, std::ref(logger_finished));
@@ -428,7 +422,7 @@ static int try_update_binary(const std::string& package, ZipArchiveHandle zip, b
   bool retry_update = false;
 
   char buffer[1024];
-  FILE* from_child = fdopen(pipefd[0], "r");
+  FILE* from_child = android::base::Fdopen(std::move(pipe_read), "r");
   while (fgets(buffer, sizeof(buffer), from_child) != nullptr) {
     std::string line(buffer);
     size_t space = line.find_first_of(" \n");
@@ -578,7 +572,7 @@ bool verify_package_compatibility(ZipArchiveHandle package_zip) {
 
 static int really_install_package(const std::string& path, bool* wipe_cache, bool needs_mount,
                                   std::vector<std::string>* log_buffer, int retry_count,
-                                  int* max_temperature) {
+                                  int* max_temperature, RecoveryUI* ui) {
   ui->SetBackground(RecoveryUI::INSTALLING_UPDATE);
   ui->Print("Finding update package...\n");
   // Give verification half the progress bar...
@@ -597,34 +591,29 @@ static int really_install_package(const std::string& path, bool* wipe_cache, boo
     }
   }
 
-  MemMapping map;
-  if (!map.MapFile(path)) {
-    LOG(ERROR) << "failed to map file";
+  auto package = Package::CreateMemoryPackage(
+      path, std::bind(&RecoveryUI::SetProgress, ui, std::placeholders::_1));
+  if (!package) {
     log_buffer->push_back(android::base::StringPrintf("error: %d", kMapFileFailure));
     return INSTALL_CORRUPT;
   }
 
   // Verify package.
-  if (!verify_package(map.addr, map.length)) {
+  if (!verify_package(package.get(), ui)) {
     log_buffer->push_back(android::base::StringPrintf("error: %d", kZipVerificationFailure));
     return INSTALL_CORRUPT;
   }
 
   // Try to open the package.
-  ZipArchiveHandle zip;
-  int err = OpenArchiveFromMemory(map.addr, map.length, path.c_str(), &zip);
-  if (err != 0) {
-    LOG(ERROR) << "Can't open " << path << " : " << ErrorCodeString(err);
+  ZipArchiveHandle zip = package->GetZipArchiveHandle();
+  if (!zip) {
     log_buffer->push_back(android::base::StringPrintf("error: %d", kZipOpenFailure));
-
-    CloseArchive(zip);
     return INSTALL_CORRUPT;
   }
 
-  // Additionally verify the compatibility of the package.
-  if (!verify_package_compatibility(zip)) {
+  // Additionally verify the compatibility of the package if it's a fresh install.
+  if (retry_count == 0 && !verify_package_compatibility(zip)) {
     log_buffer->push_back(android::base::StringPrintf("error: %d", kPackageCompatibilityFailure));
-    CloseArchive(zip);
     return INSTALL_CORRUPT;
   }
 
@@ -634,19 +623,19 @@ static int really_install_package(const std::string& path, bool* wipe_cache, boo
     ui->Print("Retry attempt: %d\n", retry_count);
   }
   ui->SetEnableReboot(false);
-  int result = try_update_binary(path, zip, wipe_cache, log_buffer, retry_count, max_temperature);
+  int result =
+      try_update_binary(path, zip, wipe_cache, log_buffer, retry_count, max_temperature, ui);
   ui->SetEnableReboot(true);
   ui->Print("\n");
 
-  CloseArchive(zip);
   return result;
 }
 
-int install_package(const std::string& path, bool* wipe_cache, bool needs_mount, int retry_count) {
+int install_package(const std::string& path, bool* wipe_cache, bool needs_mount, int retry_count,
+                    RecoveryUI* ui) {
   CHECK(!path.empty());
   CHECK(wipe_cache != nullptr);
 
-  modified_flash = true;
   auto start = std::chrono::system_clock::now();
 
   int start_temperature = GetMaxValueFromThermalZone();
@@ -661,7 +650,7 @@ int install_package(const std::string& path, bool* wipe_cache, bool needs_mount,
     result = INSTALL_ERROR;
   } else {
     result = really_install_package(path, wipe_cache, needs_mount, &log_buffer, retry_count,
-                                    &max_temperature);
+                                    &max_temperature, ui);
   }
 
   // Measure the time spent to apply OTA update in seconds.
@@ -719,7 +708,7 @@ int install_package(const std::string& path, bool* wipe_cache, bool needs_mount,
   return result;
 }
 
-bool verify_package(const unsigned char* package_data, size_t package_size) {
+bool verify_package(Package* package, RecoveryUI* ui) {
   static constexpr const char* CERTIFICATE_ZIP_FILE = "/system/etc/security/otacerts.zip";
   std::vector<Certificate> loaded_keys = LoadKeysFromZipfile(CERTIFICATE_ZIP_FILE);
   if (loaded_keys.empty()) {
@@ -731,8 +720,7 @@ bool verify_package(const unsigned char* package_data, size_t package_size) {
   // Verify package.
   ui->Print("Verifying update package...\n");
   auto t0 = std::chrono::system_clock::now();
-  int err = verify_file(package_data, package_size, loaded_keys,
-                        std::bind(&RecoveryUI::SetProgress, ui, std::placeholders::_1));
+  int err = verify_file(package, loaded_keys);
   std::chrono::duration<double> duration = std::chrono::system_clock::now() - t0;
   ui->Print("Update package verification took %.1f s (result %d).\n", duration.count(), err);
   if (err != VERIFY_SUCCESS) {
