@@ -17,6 +17,9 @@
 #ifndef _GRAPHICS_ADF_H_
 #define _GRAPHICS_ADF_H_
 
+#ifndef __user
+#define __user
+#endif
 #include <adf/adf.h>
 
 #include "graphics.h"

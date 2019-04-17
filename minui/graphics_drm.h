@@ -53,6 +53,8 @@ class MinuiBackendDrm : public MinuiBackend {
   drmModeCrtc* main_monitor_crtc;
   drmModeConnector* main_monitor_connector;
   int drm_fd;
+  uint32_t m_PlaneId;
+  uint32_t m_FBPropId;
 };
 
 #endif  // _GRAPHICS_DRM_H_

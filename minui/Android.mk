@@ -22,18 +22,26 @@ LOCAL_SRC_FILES := \
     graphics_drm.cpp \
     graphics_fbdev.cpp \
     resources.cpp \
+    buffers.c \
 
 LOCAL_WHOLE_STATIC_LIBRARIES := \
     libadf \
-    libdrm_platform \
+    libdrm_recovery \
+    libdrm_util \
     libsync_recovery
 
 LOCAL_STATIC_LIBRARIES := \
     libpng \
     libbase
 
-LOCAL_CFLAGS := -Werror
-LOCAL_C_INCLUDES := $(LOCAL_PATH)/include
+ifeq ($(TARGET_COMPILE_WITH_MSM_KERNEL),true)
+kernel_includes += $(TARGET_OUT_INTERMEDIATES)/KERNEL_OBJ/usr/include
+LOCAL_C_INCLUDES              := $(kernel_includes)
+LOCAL_CFLAGS                  := -Wall -DUSE_ION
+LOCAL_ADDITIONAL_DEPENDENCIES := $(TARGET_OUT_INTERMEDIATES)/KERNEL_OBJ/usr
+endif
+
+LOCAL_C_INCLUDES += $(LOCAL_PATH)/include
 LOCAL_EXPORT_C_INCLUDE_DIRS := $(LOCAL_PATH)/include
 
 LOCAL_MODULE := libminui
@@ -66,7 +74,8 @@ LOCAL_MODULE := libminui
 LOCAL_WHOLE_STATIC_LIBRARIES += libminui
 LOCAL_SHARED_LIBRARIES := \
     libpng \
-    libbase
+    libbase \
+    liblog
 
 LOCAL_CFLAGS := -Werror
 LOCAL_C_INCLUDES := $(LOCAL_PATH)/include
