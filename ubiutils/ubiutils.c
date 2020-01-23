@@ -10,7 +10,7 @@
 #include <errno.h>
 #include <sys/mount.h>  // for _IOW, _IOR, mount()
 #include <sys/stat.h>
-#include "ubi-user.h"
+#include <mtd/ubi-user.h>
 
 
 int ubi_mount(const char *dev_name, const char *mount_point,
