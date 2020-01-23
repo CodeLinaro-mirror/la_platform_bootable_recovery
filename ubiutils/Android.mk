@@ -6,7 +6,7 @@ include $(CLEAR_VARS)
 LOCAL_SRC_FILES := \
 	ubiutils.c
 
-LOCAL_C_INCLUDES += kernel/include/uapi/mtd
+LOCAL_C_INCLUDES += $(TARGET_OUT_INTERMEDIATES)/KERNEL_OBJ/usr/include
 
 LOCAL_MODULE := libubiutils
 
