@@ -264,12 +264,12 @@ int setup_install_mounts() {
     if (entry.mount_point == "/tmp" || entry.mount_point == "/cache") {
       if (ensure_path_mounted(entry.mount_point) != 0) {
         LOG(ERROR) << "Failed to mount " << entry.mount_point;
-        return -1;
+        return -2;
       }
     } else {
       if (ensure_path_unmounted(entry.mount_point) != 0) {
         LOG(ERROR) << "Failed to unmount " << entry.mount_point;
-        return -1;
+        return -3;
       }
     }
   }

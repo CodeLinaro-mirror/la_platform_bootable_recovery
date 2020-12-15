@@ -327,10 +327,13 @@ static void log_max_temperature(int* max_temperature, const std::atomic<bool>& l
 // If the package contains an update binary, extract it and run it.
 static int try_update_binary(const std::string& package, ZipArchiveHandle zip, bool* wipe_cache,
                              std::vector<std::string>* log_buffer, int retry_count,
-                             int* max_temperature, RecoveryUI* ui) {
+                             int* max_temperature, RecoveryUI* ui, ErrorMessage* message) {
   std::map<std::string, std::string> metadata;
   if (!ReadMetadataFromPackage(zip, &metadata)) {
     LOG(ERROR) << "Failed to parse metadata in the zip file";
+    if (message != NULL) {
+       message->SetErrorCode(kMetadataParseFailure);
+    }
     return INSTALL_CORRUPT;
   }
 
@@ -339,6 +342,9 @@ static int try_update_binary(const std::string& package, ZipArchiveHandle zip, b
   if (int check_status = is_ab ? CheckPackageMetadata(metadata, OtaType::AB) : 0;
       check_status != 0) {
     log_buffer->push_back(android::base::StringPrintf("error: %d", kUpdateBinaryCommandFailure));
+    if (message != NULL) {
+       message->SetErrorCode(kUpdateBinaryCommandFailure);
+    }
     return check_status;
   }
 
@@ -350,6 +356,9 @@ static int try_update_binary(const std::string& package, ZipArchiveHandle zip, b
   // so that the child updater process will recieve a non-closed fd.
   if (!android::base::Pipe(&pipe_read, &pipe_write, 0)) {
     PLOG(ERROR) << "Failed to create pipe for updater-recovery communication";
+    if (message != NULL) {
+       message->SetErrorCode(KPipeCreateFailure);
+    }
     return INSTALL_CORRUPT;
   }
 
@@ -391,6 +400,9 @@ static int try_update_binary(const std::string& package, ZipArchiveHandle zip, b
                 : SetUpNonAbUpdateCommands(package, zip, retry_count, pipe_write.get(), &args);
       update_status != 0) {
     log_buffer->push_back(android::base::StringPrintf("error: %d", kUpdateBinaryCommandFailure));
+    if (message != NULL) {
+       message->SetErrorCode(kUpdateBinaryCommandFailure);
+    }
     return update_status;
   }
 
@@ -398,6 +410,9 @@ static int try_update_binary(const std::string& package, ZipArchiveHandle zip, b
   if (pid == -1) {
     PLOG(ERROR) << "Failed to fork update binary";
     log_buffer->push_back(android::base::StringPrintf("error: %d", kForkUpdateBinaryFailure));
+    if (message != NULL) {
+       message->SetErrorCode(kForkUpdateBinaryFailure);
+    }
     return INSTALL_ERROR;
   }
 
@@ -412,6 +427,9 @@ static int try_update_binary(const std::string& package, ZipArchiveHandle zip, b
     // hang. This deadlock results from an improperly copied mutex in the ui functions.
     // (Bug: 34769056)
     fprintf(stdout, "E:Can't run %s (%s)\n", chr_args[0], strerror(errno));
+    if (message != NULL) {
+       message->SetErrorCode(kRunUpdateBinaryFailure);
+    }
     _exit(EXIT_FAILURE);
   }
   pipe_write.reset();
@@ -469,6 +487,18 @@ static int try_update_binary(const std::string& package, ZipArchiveHandle zip, b
       if (!args.empty()) {
         // Save the logging request from updater and write to last_install later.
         log_buffer->push_back(args);
+        int code = 0;
+        if (args.compare(0, strlen("error"), "error") == 0) {
+          sscanf(args.c_str(), "error: %d", &code);
+          if (message != NULL) {
+            message->SetErrorCode(static_cast<ErrorCode>(code));
+          }
+        } else if (args.compare(0, strlen("cause"), "cause") == 0){
+          sscanf(args.c_str(), "cause: %d", &code);
+          if (message != NULL) {
+            message->SetCauseCode(static_cast<CauseCode>(code));
+          }
+        }
       } else {
         LOG(ERROR) << "invalid \"log\" parameters: " << line;
       }
@@ -573,7 +603,7 @@ bool verify_package_compatibility(ZipArchiveHandle package_zip) {
 
 static int really_install_package(const std::string& path, bool* wipe_cache, bool needs_mount,
                                   std::vector<std::string>* log_buffer, int retry_count,
-                                  int* max_temperature, RecoveryUI* ui) {
+                                  int* max_temperature, RecoveryUI* ui, ErrorMessage* message) {
   ui->SetBackground(RecoveryUI::INSTALLING_UPDATE);
   ui->Print("Finding update package...\n");
   // Give verification half the progress bar...
@@ -596,12 +626,18 @@ static int really_install_package(const std::string& path, bool* wipe_cache, boo
       path, std::bind(&RecoveryUI::SetProgress, ui, std::placeholders::_1));
   if (!package) {
     log_buffer->push_back(android::base::StringPrintf("error: %d", kMapFileFailure));
+    if (message != NULL) {
+       message->SetErrorCode(kMapFileFailure);
+    }
     return INSTALL_CORRUPT;
   }
 
   // Verify package.
   if (!verify_package(package.get(), ui)) {
     log_buffer->push_back(android::base::StringPrintf("error: %d", kZipVerificationFailure));
+    if (message != NULL) {
+       message->SetErrorCode(kZipVerificationFailure);
+    }
     return INSTALL_CORRUPT;
   }
 
@@ -609,12 +645,18 @@ static int really_install_package(const std::string& path, bool* wipe_cache, boo
   ZipArchiveHandle zip = package->GetZipArchiveHandle();
   if (!zip) {
     log_buffer->push_back(android::base::StringPrintf("error: %d", kZipOpenFailure));
+    if (message != NULL) {
+       message->SetErrorCode(kZipOpenFailure);
+    }
     return INSTALL_CORRUPT;
   }
 
   // Additionally verify the compatibility of the package if it's a fresh install.
   if (retry_count == 0 && !verify_package_compatibility(zip)) {
     log_buffer->push_back(android::base::StringPrintf("error: %d", kPackageCompatibilityFailure));
+    if (message != NULL) {
+       message->SetErrorCode(kPackageCompatibilityFailure);
+    }
     return INSTALL_CORRUPT;
   }
 
@@ -625,7 +667,7 @@ static int really_install_package(const std::string& path, bool* wipe_cache, boo
   }
   ui->SetEnableReboot(false);
   int result =
-      try_update_binary(path, zip, wipe_cache, log_buffer, retry_count, max_temperature, ui);
+      try_update_binary(path, zip, wipe_cache, log_buffer, retry_count, max_temperature, ui, message);
   ui->SetEnableReboot(true);
   ui->Print("\n");
 
@@ -633,7 +675,7 @@ static int really_install_package(const std::string& path, bool* wipe_cache, boo
 }
 
 int install_package(const std::string& path, bool should_wipe_cache, bool needs_mount,
-                    int retry_count, RecoveryUI* ui) {
+                    int retry_count, RecoveryUI* ui, ErrorMessage* message) {
   CHECK(!path.empty());
 
   auto start = std::chrono::system_clock::now();
@@ -647,11 +689,18 @@ int install_package(const std::string& path, bool should_wipe_cache, bool needs_
           result = setup_install_mounts();
   if (result != 0 ) {
     LOG(ERROR) << "failed to set up expected mounts for install; aborting";
+    if (message != NULL) {
+      if (result == -2) {
+        message->SetErrorCode(kMountFailure);
+      } else {
+        message->SetErrorCode(kUnmountFailure);
+      }
+    }
     result = INSTALL_ERROR;
   } else {
     bool updater_wipe_cache = false;
     result = really_install_package(path, &updater_wipe_cache, needs_mount, &log_buffer,
-                                    retry_count, &max_temperature, ui);
+                                    retry_count, &max_temperature, ui, message);
     should_wipe_cache = should_wipe_cache || updater_wipe_cache;
   }
 

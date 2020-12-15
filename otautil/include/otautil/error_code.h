@@ -28,6 +28,11 @@ enum ErrorCode : int {
   kMapFileFailure,
   kForkUpdateBinaryFailure,
   kUpdateBinaryCommandFailure,
+  kMountFailure,
+  kUnmountFailure,
+  kMetadataParseFailure,
+  KPipeCreateFailure,
+  kRunUpdateBinaryFailure,
 };
 
 enum CauseCode : int {
@@ -50,6 +55,7 @@ enum CauseCode : int {
   kPatchApplicationFailure,
   kHashTreeComputationFailure,
   kEioFailure,
+  kSdcardFailure,
   kVendorFailure = 200
 };
 
@@ -75,6 +81,26 @@ enum UncryptErrorCode : int {
   kUncryptPackageMissingError,
   kUncryptRealpathFindError,
   kUncryptBlockDeviceFindError,
+};
+
+class ErrorMessage {
+public:
+  ErrorMessage():mError(static_cast<ErrorCode>(0)),
+                 mCause(static_cast<CauseCode>(0)),
+                 mUncryptError(static_cast<UncryptErrorCode>(0)){
+  }
+  // XXX(uncrypt)-XXXX(error)-XXX(cause)
+  // uncrypt < 400, error < 9999, cause < 999
+  unsigned long GenerateCode() {
+    return (10000000 * mUncryptError + 1000 * mError + mCause);
+  }
+  void SetErrorCode(ErrorCode code){mError=code;}
+  void SetCauseCode(CauseCode code){mCause=code;}
+  void SetUncryptErrorCode(UncryptErrorCode code){mUncryptError=code;}
+private:
+  ErrorCode mError;
+  CauseCode mCause;
+  UncryptErrorCode mUncryptError;
 };
 
 #endif  // _ERROR_CODE_H_

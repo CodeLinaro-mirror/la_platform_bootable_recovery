@@ -771,6 +771,46 @@ static void log_failure_code(ErrorCode code, const std::string& update_package) 
   LOG(INFO) << log_content;
 }
 
+static void write_file(const char *file_name, unsigned long reason, const char *result)
+{
+  if (file_name == NULL) return;
+
+  ensure_path_mounted(file_name);
+  int result_fd = open(file_name, O_RDWR | O_CREAT | O_TRUNC, 0666);
+
+  if (result_fd < 0) {
+    printf("cannot open '%s' for output : %s\n", file_name, strerror(errno));
+    return;
+  }
+
+  dprintf(result_fd, "%s:%lu", result, reason);
+
+  close(result_fd);
+}
+
+#define INSTALL_SUCCESS_CODE 999
+#define INSTALL_FAILURE_CODE 1000000
+static void write_result(int reason, ErrorMessage* message)
+{
+  unsigned long ret = 0;
+  const char* result = NULL;
+  if (reason == INSTALL_SUCCESS) {
+    ret = INSTALL_SUCCESS_CODE;
+    result = "INSTALL SUCCESS";
+  } else {
+    if (message != NULL) {
+      ret = message->GenerateCode();
+    } else {
+      ret = INSTALL_FAILURE_CODE;
+    }
+    result = "INSTALL Failed";
+  }
+
+  printf("package install result:%s\n", result);
+  const char* file = has_cache ? "/cache/recovery/result.txt" : "/data/fota/result.txt";
+  write_file(file, ret, result);
+}
+
 Device::BuiltinAction start_recovery(Device* device, const std::vector<std::string>& args) {
   static constexpr struct option OPTIONS[] = {
     { "fastboot", no_argument, nullptr, 0 },
@@ -812,6 +852,7 @@ Device::BuiltinAction start_recovery(Device* device, const std::vector<std::stri
 
   auto args_to_parse = StringVectorToNullTerminatedArray(args);
   int status = INSTALL_SUCCESS;
+  ErrorMessage errorMessage;
   // next_action indicates the next target to reboot into upon finishing the install. It could be
   // overridden to a different reboot target per user request.
   Device::BuiltinAction next_action = shutdown_after ? Device::SHUTDOWN : Device::REBOOT;
@@ -915,6 +956,8 @@ Device::BuiltinAction start_recovery(Device* device, const std::vector<std::stri
             if (is_ufs_dev()) {
                 if(do_sdcard_mount_for_ufs() != 0) {
                     status = INSTALL_ERROR;
+                    errorMessage.SetErrorCode(kMountFailure);
+                    errorMessage.SetCauseCode(kSdcardFailure);
                     goto error;
                 }
             } else {
@@ -940,11 +983,13 @@ Device::BuiltinAction start_recovery(Device* device, const std::vector<std::stri
       // Log the error code to last_install when installation skips due to
       // low battery.
       log_failure_code(kLowBattery, update_package);
+      errorMessage.SetErrorCode(kLowBattery);
       status = INSTALL_SKIPPED;
     } else if (retry_count == 0 && bootreason_in_blacklist()) {
       // Skip update-on-reboot when bootreason is kernel_panic or similar
       ui->Print("bootreason is in the blacklist; skip OTA installation\n");
       log_failure_code(kBootreasonInBlacklist, update_package);
+      errorMessage.SetErrorCode(kBootreasonInBlacklist);
       status = INSTALL_SKIPPED;
     } else {
       // It's a fresh update. Initialize the retry_count in the BCB to 1; therefore we can later
@@ -953,7 +998,7 @@ Device::BuiltinAction start_recovery(Device* device, const std::vector<std::stri
         set_retry_bootloader_message(retry_count + 1, args);
       }
 
-      status = install_package(update_package, should_wipe_cache, true, retry_count, ui);
+      status = install_package(update_package, should_wipe_cache, true, retry_count, ui, &errorMessage);
       if (status != INSTALL_SUCCESS) {
         ui->Print("Installation aborted.\n");
 
@@ -982,8 +1027,11 @@ Device::BuiltinAction start_recovery(Device* device, const std::vector<std::stri
         if (is_ro_debuggable()) {
           ui->ShowText(true);
         }
+      } else { //remove it for more space in boot up
+        unlink(update_package);
       }
     }
+    write_result(status, &errorMessage);
   } else if (should_wipe_data) {
     save_current_log = true;
     bool convert_fbe = reason && strcmp(reason, "convert_fbe") == 0;
