@@ -14,6 +14,12 @@
  * limitations under the License.
  */
 
+/*
+ * Changes from Qualcomm Innovation Center are provided under the following license:
+ * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * SPDX-License-Identifier: BSD-3-Clause-Clear
+ */
+
 #include <ctype.h>
 #include <errno.h>
 #include <stdarg.h>
@@ -1477,6 +1483,15 @@ Value* WriteRawImageFn(const char* name, State* state, int argc, Expr* argv[]) {
         goto done;
     }
 
+    bool success;
+
+    if(contents->type == VAL_BLOB && install_checker(partition, contents->data, contents->size) == 0)
+    {
+        printf("%s: skipping install\n", partition);
+        success = true;
+        goto skip;
+    }
+
     MtdWriteContext* ctx = mtd_write_partition(mtd);
     if (ctx == NULL) {
         printf("%s: can't write mtd partition \"%s\"\n",
@@ -1485,7 +1500,6 @@ Value* WriteRawImageFn(const char* name, State* state, int argc, Expr* argv[]) {
         goto done;
     }
 
-    bool success;
 
     if (contents->type == VAL_STRING) {
         // we're given a filename as the contents
@@ -1527,6 +1541,7 @@ Value* WriteRawImageFn(const char* name, State* state, int argc, Expr* argv[]) {
     printf("%s %s partition\n",
            success ? "wrote" : "failed to write", partition);
 
+skip:
     result = success ? partition : strdup("");
 
 done:

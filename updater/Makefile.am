@@ -20,7 +20,8 @@ AM_CPPFLAGS = \
 AM_LDFLAGS = -shared -version-info 1:0:0
 c_sources = install.c \
             blockimg.c \
-            updater.c
+            updater.c \
+	    version.c
 
 library_includedir = $(pkgincludedir)
 library_include_HEADERS = $(h_sources)

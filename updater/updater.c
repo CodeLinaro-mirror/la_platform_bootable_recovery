@@ -14,6 +14,12 @@
  * limitations under the License.
  */
 
+/*
+ * Changes from Qualcomm Innovation Center are provided under the following license:
+ * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * SPDX-License-Identifier: BSD-3-Clause-Clear
+ */
+
 #include <stdio.h>
 #include <unistd.h>
 #include <stdlib.h>
@@ -68,6 +74,15 @@ int main(int argc, char** argv) {
     FILE* cmd_pipe = fdopen(fd, "wb");
     setlinebuf(cmd_pipe);
 
+    // Extract version numbers from smem
+
+    int err;
+    err = smem_search();
+    if (err != 0)
+    {
+        fprintf(stderr, "Reading versions from smem failed\n");      
+    }
+
     // Extract the script from the package.
 
     const char* package_filename = argv[3];
@@ -77,7 +92,7 @@ int main(int argc, char** argv) {
         return 3;
     }
     ZipArchive za;
-    int err;
+
     err = mzOpenZipArchive(map.addr, map.length, &za);
     if (err != 0) {
         printf("failed to open package %s: %s\n",
