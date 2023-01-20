@@ -426,10 +426,12 @@ int main(int argc, char** argv) {
     printf("Quiescent recovery mode.\n");
     device->ResetUI(new StubRecoveryUI());
   } else {
-    if (!device->GetUI()->Init(locale)) {
+    /* TODO: Use the stub recovery until we have the graphics drm_fd poll fix */
+    /* if (!device->GetUI()->Init(locale)) {
       printf("Failed to initialize UI; using stub UI instead.\n");
       device->ResetUI(new StubRecoveryUI());
-    }
+    } */
+    device->ResetUI(new StubRecoveryUI());
   }
 
   BootState boot_state(reason, stage);  // recovery_main owns the state of boot.
