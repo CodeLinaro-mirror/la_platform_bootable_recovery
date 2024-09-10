@@ -148,6 +148,32 @@ static uint32_t get_topology_lm_number(int fd, uint32_t blob_id) {
   return num_lm;
 }
 
+static bool is_primary_plane(int fd, uint32_t blob_id) {
+
+  bool primary = false;
+  uint32_t master_plane_id_val = 0;
+  drmModePropertyBlobRes *blob = drmModeGetPropertyBlob(fd, blob_id);
+  if (!blob)
+    return false;
+
+  const char *fmt_str = (const char *)(blob->data);
+  std::stringstream stream(fmt_str);
+  std::string line = {};
+  const std::string master_plane = "primary_smart_plane_id=";
+
+  while (std::getline(stream, line)) {
+    if (line.find(master_plane) != std::string::npos) {
+        line = std::string(line, master_plane.length());
+        master_plane_id_val = std::atoi(line.c_str());
+        break;
+    }
+  }
+
+  drmModeFreePropertyBlob(blob);
+  primary = master_plane_id_val ? false : true;
+  return primary;
+}
+
 static int find_plane_prop_id(uint32_t obj_id, const char *prop_name,
                               Plane *plane_res) {
   int i, j = 0;
@@ -571,22 +597,37 @@ int MinuiBackendDrm::Initdisplay(DrmConnector index) {
     }
   }
 
+  printf("plane count:%d\n",plane_options->count_planes);
+  struct Plane *plane_all_res;
+  uint32_t counter = 0;
+  plane_all_res = static_cast<struct Plane *>(
+     calloc(plane_options->count_planes, sizeof(struct Plane)));
   /* Set plane resources */
-  for (uint32_t i = 0; i < number_of_lms; ++i) {
-    plane_res[i].plane = drmModeGetPlane(drm_fd, plane_options->planes[i]);
-    if (!plane_res[i].plane) return -1;
+  for (uint32_t i = 0; i < plane_options->count_planes; ++i) {
+    plane_all_res[i].plane = drmModeGetPlane(drm_fd, plane_options->planes[i]);
+    if (!plane_all_res[i].plane)return -1;
   }
 
-  for (uint32_t i = 0; i < number_of_lms; ++i) {
-    struct Plane* obj = &plane_res[i];
+  for (uint32_t i = plane_options->count_planes - 1; i >= 0; i--) {
+    struct Plane* obj = &plane_all_res[i];
     unsigned int j;
     obj->props = drmModeObjectGetProperties(drm_fd, obj->plane->plane_id, DRM_MODE_OBJECT_PLANE);
     if (!obj->props) continue;
     obj->props_info = static_cast<drmModePropertyRes**>(
         calloc(obj->props->count_props, sizeof(*obj->props_info)));
     if (!obj->props_info) continue;
-    for (j = 0; j < obj->props->count_props; ++j)
+    for (j = 0; j < obj->props->count_props; ++j) {
       obj->props_info[j] = drmModeGetProperty(drm_fd, obj->props->props[j]);
+
+      if (!strcmp(obj->props_info[j]->name, "capabilities")) {
+        if(is_primary_plane(drm_fd, obj->props->prop_values[j])) {
+          plane_res[counter] = plane_all_res[i];
+          counter++;
+      }
+     }
+   }
+   if (counter == number_of_lms)
+     break;
   }
 
   drmModeFreePlaneResources(plane_options);
