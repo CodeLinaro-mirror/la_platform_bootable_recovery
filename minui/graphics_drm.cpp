@@ -417,6 +417,9 @@ int MinuiBackendDrm::SetupPipeline(drmModeAtomicReqPtr atomic_req, DrmConnector 
       add_prop(&crtc_res, crtc, Crtc, drm[index].monitor_crtc->crtc_id, spr_prop_name.c_str(),
                crtc_res.spr_blob_id, index);
     }
+    /* Disable demura for hand off */
+    add_prop(&crtc_res, crtc, Crtc, drm[index].monitor_crtc->crtc_id, demura_prop_name.c_str(), 0,
+             index);
   }
 
   /* Setup planes */
@@ -571,6 +574,11 @@ int MinuiBackendDrm::Initdisplay(DrmConnector index) {
       if (!strcmp(crtc_res.props_info[j]->name, "SDE_SPR_INIT_CFG_V1") ||
           !strcmp(crtc_res.props_info[j]->name, "SDE_SPR_INIT_CFG_V2")) {
         spr_prop_name = crtc_res.props_info[j]->name;
+      }
+      /* Get demura property name */
+      if (!strcmp(crtc_res.props_info[j]->name, "SDE_DEMURA_INIT_CFG_V1") ||
+          !strcmp(crtc_res.props_info[j]->name, "SDE_DEMURA_INIT_CFG_V3")) {
+        demura_prop_name = crtc_res.props_info[j]->name;
       }
     }
 
