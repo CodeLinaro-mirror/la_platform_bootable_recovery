@@ -249,4 +249,5 @@ class MinuiBackendDrm : public MinuiBackend {
   uint32_t number_of_lms;
   uint32_t spr_enabled;
   std::string spr_prop_name;
+  std::string demura_prop_name;
 };
