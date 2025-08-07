@@ -29,6 +29,7 @@
 #include <memory>
 #include <string>
 #include <vector>
+#include <fstream>
 
 #include <android-base/file.h>
 #include <android-base/logging.h>
@@ -49,6 +50,13 @@
 #define SDEXPRESS_BLK_0_PATH "/dev/block/nvme0n1p1"
 
 static constexpr const char* SDCARD_ROOT = "/sdcard";
+static constexpr const char* USBDISK_ROOT = "/usbdisk";
+#define MAX_PATH_LEN 128
+#define BLOCK_DEVS "/sys/class/block/"
+#define USB_FEATURE "ssusb"
+#define DEV_PREFIX "sd"
+#define DEV_ROOT "/dev/block/"
+
 // How long (in seconds) we wait for the fuse-provided package file to
 // appear, before timing out.
 static constexpr int SDCARD_INSTALL_TIMEOUT = 10;
@@ -317,3 +325,143 @@ InstallResult ApplyFromSdcard(Device* device) {
   ensure_path_unmounted(SDCARD_ROOT);
   return result;
 }
+
+static bool find_usb_disk(char * usb_disk, size_t usb_disk_len) {
+  bool ret = false;
+  DIR *dir = NULL;
+  struct dirent *entry;
+  size_t d_name_len = 0;
+  ssize_t len;
+  char path[MAX_PATH_LEN] = "";
+  char blockdir[MAX_PATH_LEN] = "";
+
+  dir = opendir(BLOCK_DEVS);
+  if (!dir) {
+    LOG(ERROR) << "open block devies directory failed!\n";
+    return false;
+  }
+  while ((entry = readdir(dir)) != NULL) {
+
+    if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0
+    || strncmp(entry->d_name, DEV_PREFIX, strlen(DEV_PREFIX)) != 0) {
+      continue;
+    }
+
+    if (DT_LNK != entry->d_type){
+      continue;
+    }
+
+    snprintf(blockdir, sizeof(blockdir), "%s%s", BLOCK_DEVS, entry->d_name);
+    len = readlink(blockdir, path, sizeof(path) - 1);
+    if (-1 != len) {
+      path[len] = '\0';
+    } else {
+      continue;
+    }
+
+    if (std::string::npos == std::string(path).find(USB_FEATURE)) {
+      continue;
+    }
+
+    d_name_len = strlen(entry->d_name);
+    if (d_name_len < usb_disk_len) {
+      // usb_disk will be a device name like "sdi"
+      strlcpy(usb_disk, entry->d_name, usb_disk_len);
+      ret = true;
+      LOG(INFO) << "Found USB disk device: " << entry->d_name;
+    } else {
+      LOG(ERROR) << "Device name is oversize!\n";
+    }
+  }
+  closedir(dir);
+  return ret;
+}
+
+
+// Find the right block path where usbdisk is mounted, and try mounting it.
+static int do_usbdisk_mount() {
+  int rc = 0;
+  struct stat buffer;
+
+  char usb_disk_blk_path[MAX_PATH_LEN] = {DEV_ROOT};
+  if (!find_usb_disk(usb_disk_blk_path + strlen(usb_disk_blk_path),
+                     MAX_PATH_LEN - strlen(usb_disk_blk_path))) {
+    LOG(ERROR) << "Can't find a USB disk device\n";
+    goto error;
+  }
+  if (stat(usb_disk_blk_path, &buffer) == 0) {
+    LOG(INFO) << "Mounting usbdisk on " << usb_disk_blk_path;
+    rc = mount(usb_disk_blk_path, USBDISK_ROOT, "exfat", MS_RDONLY, NULL);
+  } else {
+    LOG(ERROR) << "Unable to get the block path for usbdisk.";
+    goto error;
+  }
+
+  if (rc) {
+    LOG(ERROR) << "Failed to mount usbdisk: " << strerror(errno) << "\n";
+    goto error;
+  }
+  LOG(INFO) << "Done mounting usbdisk\n";
+  return 0;
+
+error:
+  return -1;
+}
+
+bool isMounted(const std::string& mountPoint) {
+  std::ifstream mountsFile("/proc/mounts");
+  std::string line;
+  while (std::getline(mountsFile,line)) {
+    size_t spacePos = line.find(' ');
+    if (spacePos != std::string::npos) {
+      std::string mountedPath = line.substr(spacePos + 1);
+      mountedPath = mountedPath.substr(0, mountedPath.find(' '));
+      if (mountedPath == mountPoint) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+InstallResult ApplyFromUsbDisk(Device* device) {
+  auto ui = device->GetUI();
+  int umountresult = 0;
+  ui->Print("Update via USB disk. Mount USB disk\n");
+  if (isMounted(USBDISK_ROOT)) {
+    LOG(INFO) << "\nUSB disk is already mounted\n";
+  }
+  else if (do_usbdisk_mount() != 0) {
+    LOG(ERROR) << "\nFailed to mount USB disk\n";
+    return INSTALL_ERROR;
+  }
+
+  std::string path = BrowseDirectory(USBDISK_ROOT, device, ui);
+  if (path.empty()) {
+    LOG(ERROR) << "\n-- No package file selected.\n";
+    umountresult = umount2(USBDISK_ROOT, MNT_DETACH);
+    if (umountresult == 0) {
+      LOG(INFO) << "\nUSB disk Unmounted successfully.\n";
+    } else {
+      LOG(ERROR) << "USB disk unmount result: " << umountresult << "\n";
+    }
+    return INSTALL_ERROR;
+  }
+  // Hint the install function to read from a block map file.
+  if (android::base::EndsWithIgnoreCase(path, ".map")) {
+    path = "@" + path;
+  }
+
+  ui->Print("\n-- Install %s ...\n", path.c_str());
+  SetSdcardUpdateBootloaderMessage();
+
+  auto result = InstallWithFuseFromPath(path, device);
+  umountresult = umount2(USBDISK_ROOT, MNT_DETACH);
+  if (umountresult == 0) {
+    LOG(INFO) << "\nUSB disk Unmounted successfully.\n";
+  } else {
+    LOG(ERROR) << "\nUSB disk unmount result: " << umountresult << "\n";
+  }
+  return result;
+}
+

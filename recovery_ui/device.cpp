@@ -40,6 +40,7 @@ static std::vector<std::pair<std::string, Device::BuiltinAction>> g_menu_actions
   { "Run locale test", Device::RUN_LOCALE_TEST },
   { "Enter rescue", Device::ENTER_RESCUE },
   { "Power off", Device::SHUTDOWN },
+  { "Apply update from USB disk", Device::APPLY_USB_DISK },
 };
 
 static std::vector<std::string> g_menu_items;
