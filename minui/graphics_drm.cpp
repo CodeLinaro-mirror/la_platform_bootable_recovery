@@ -70,7 +70,7 @@
     int prop_count = 0;                                               \
     struct Type *obj = NULL;                                          \
     obj = (_res);                                                     \
-    if (!obj || drm[index].monitor_##type->type##_id != (obj_id)){          \
+    if (!obj || !obj->props || drm[index].monitor_##type->type##_id != (obj_id)){          \
       prop_id = 0;                                                    \
       break;                                                          \
     }                                                                 \
