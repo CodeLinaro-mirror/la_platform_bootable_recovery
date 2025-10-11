@@ -179,6 +179,9 @@ bool update_bootloader_message(const std::vector<std::string>& options, std::str
 bool update_bootloader_message_in_struct(bootloader_message* boot,
                                          const std::vector<std::string>& options);
 
+// Update reserved bit in bootloader message
+void update_reserved_bit_in_struct(bootloader_message* boot);
+
 // Clear BCB.
 bool clear_bootloader_message(std::string* err);
 
