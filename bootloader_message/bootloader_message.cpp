@@ -32,6 +32,7 @@
 #include <android-base/stringprintf.h>
 #include <android-base/unique_fd.h>
 #include <fstab/fstab.h>
+#include <android-base/logging.h>
 
 #ifndef __ANDROID__
 #include <cutils/memory.h>  // for strlcpy
@@ -177,11 +178,13 @@ bool write_bootloader_message(const bootloader_message& boot, std::string* err) 
 bool clear_bootloader_message(std::string* err) {
   bootloader_message boot = {};
   LOG(INFO) << "Clearing BCB";
+  update_reserved_bit_in_struct(&boot);
   return write_bootloader_message(boot, err);
 }
 
 bool write_bootloader_message(const std::vector<std::string>& options, std::string* err) {
   bootloader_message boot = {};
+  update_reserved_bit_in_struct(&boot);
   update_bootloader_message_in_struct(&boot, options);
 
   return write_bootloader_message(boot, err);
@@ -190,6 +193,7 @@ bool write_bootloader_message(const std::vector<std::string>& options, std::stri
 bool write_bootloader_message_to(const std::vector<std::string>& options,
                                  const std::string& misc_blk_device, std::string* err) {
   bootloader_message boot = {};
+  update_reserved_bit_in_struct(&boot);
   update_bootloader_message_in_struct(&boot, options);
 
   return write_bootloader_message_to(boot, misc_blk_device, err);
@@ -224,6 +228,29 @@ bool update_bootloader_message_in_struct(bootloader_message* boot,
   }
   strlcpy(boot->recovery, recovery.c_str(), sizeof(boot->recovery));
   return true;
+}
+
+void update_reserved_bit_in_struct(bootloader_message* boot) {
+
+   bool is_asymmetric_support = android::base::GetBoolProperty("ro.vendor.asymmetric_support", false);
+
+   LOG(INFO) << "update_reserved_bit_in_struct asymmetric_support = " << is_asymmetric_support;
+   if (is_asymmetric_support) {
+      LOG(INFO) << "update_reserved_bit_in_struct asymmetric is supported ";
+      if (!boot) return;
+
+      bootloader_message backup_boot = {};
+
+      std::string err;
+      if (!read_bootloader_message(&backup_boot, &err)) {
+         LOG(ERROR) << "unable to read bootloader message " << err;
+         return;
+      }
+
+      memset(boot->reserved, 0, sizeof(boot->reserved));
+      strlcpy(boot->reserved, backup_boot.reserved, sizeof(boot->reserved));
+      LOG(INFO)<<"boot.reserved = "<< boot->reserved;
+   }
 }
 
 bool write_reboot_bootloader(std::string* err) {
