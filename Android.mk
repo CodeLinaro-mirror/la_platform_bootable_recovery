@@ -82,6 +82,9 @@ ifeq ($(BOARD_CACHEIMAGE_PARTITION_SIZE),)
 LOCAL_REQUIRED_MODULES += recovery-refresh
 endif
 
+LOCAL_POST_INSTALL_CMD += mkdir -p $(TARGET_RECOVERY_ROOT_OUT)/vendor/firmware_mnt
+LOCAL_POST_INSTALL_CMD += mkdir -p $(TARGET_RECOVERY_ROOT_OUT)/usbdisk
+
 include $(BUILD_PHONY_PACKAGE)
 
 include \
