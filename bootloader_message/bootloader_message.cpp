@@ -184,8 +184,8 @@ bool clear_bootloader_message(std::string* err) {
 
 bool write_bootloader_message(const std::vector<std::string>& options, std::string* err) {
   bootloader_message boot = {};
-  update_reserved_bit_in_struct(&boot);
   update_bootloader_message_in_struct(&boot, options);
+  update_reserved_bit_in_struct(&boot);
 
   return write_bootloader_message(boot, err);
 }
@@ -193,8 +193,8 @@ bool write_bootloader_message(const std::vector<std::string>& options, std::stri
 bool write_bootloader_message_to(const std::vector<std::string>& options,
                                  const std::string& misc_blk_device, std::string* err) {
   bootloader_message boot = {};
-  update_reserved_bit_in_struct(&boot);
   update_bootloader_message_in_struct(&boot, options);
+  update_reserved_bit_in_struct(&boot);
 
   return write_bootloader_message_to(boot, misc_blk_device, err);
 }
@@ -247,8 +247,15 @@ void update_reserved_bit_in_struct(bootloader_message* boot) {
          return;
       }
 
-      memset(boot->reserved, 0, sizeof(boot->reserved));
-      strlcpy(boot->reserved, backup_boot.reserved, sizeof(boot->reserved));
+      /* Copy all reserved bytes. reserved[2] (first_boot_completed) is then cleared
+       * so abl retry_cnt decrements on LA boot failure. For FDR it is restored so
+       * abl retry_cnt stays at MAX through the wipe cycle. */
+      memcpy(boot->reserved, backup_boot.reserved, sizeof(boot->reserved));
+      boot->reserved[2] = '\0';
+      if (strstr(boot->recovery, "--wipe_data") != nullptr) {
+         boot->reserved[2] = backup_boot.reserved[2];
+         LOG(INFO) << "update_reserved_bit_in_struct: FDR, preserving reserved[2]=" << boot->reserved[2];
+      }
       LOG(INFO)<<"boot.reserved = "<< boot->reserved;
    }
 }
